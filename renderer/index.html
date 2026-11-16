@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' app:; img-src 'self' app: data: blob:; font-src 'self' app: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' app: 'wasm-unsafe-eval'; connect-src 'self' app: blob: data:">
+  <title>Endpaper</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="home" hidden></div>
+
+  <div id="editor" hidden>
+    <header id="topbar">
+      <button class="icon-btn brand-btn" id="brand-btn" data-cmd="home" title="Close and go to the start screen"></button>
+      <div class="doc-title"><span id="doc-name" title="Double-click to rename">Untitled</span><i id="doc-dirty" title="Not saved" hidden>●</i></div>
+      <button class="icon-btn" data-cmd="menu" title="Menu">⋯</button>
+      <div class="sep"></div>
+      <div id="tools" class="seg seg-tools">
+        <button data-tool="select" title="Select and move (V)">➤</button>
+        <button data-tool="text" title="Text box (T)">T</button>
+        <button data-tool="image" title="Photo frame (P)">▣</button>
+        <button data-tool="rect" title="Rectangle (R)">■</button>
+        <button data-tool="ellipse" title="Ellipse (E)">●</button>
+        <button data-tool="line" title="Line (L)">╱</button>
+      </div>
+      <button class="btn btn-sm" data-cmd="place" title="Place photos on this page">Place photos…</button>
+      <div class="sep"></div>
+      <button class="icon-btn" id="btn-undo" data-cmd="undo" title="Undo (Ctrl+Z)">↶</button>
+      <button class="icon-btn" id="btn-redo" data-cmd="redo" title="Redo (Ctrl+Y)">↷</button>
+      <div class="spacer"></div>
+      <div class="zoom">
+        <button class="icon-btn" data-cmd="zoom-out" title="Zoom out (Ctrl+-)">−</button>
+        <button class="zoom-pct" id="zoom-pct" data-cmd="zoom-100" title="Actual size (Ctrl+1)">100%</button>
+        <button class="icon-btn" data-cmd="zoom-in" title="Zoom in (Ctrl+=)">+</button>
+        <button class="btn btn-sm btn-ghost" data-cmd="zoom-fit" title="Fit the spread (Ctrl+0)">Fit</button>
+      </div>
+      <div class="sep"></div>
+      <button class="btn btn-sm btn-ghost" data-cmd="check" title="What a printer would flag">Check <b id="check-badge" hidden></b></button>
+      <button class="btn btn-sm" data-cmd="save" title="Save (Ctrl+S)">Save</button>
+      <button class="btn btn-sm btn-accent" data-cmd="export" title="Export a print PDF (Ctrl+E)">Export</button>
+      <button class="icon-btn" data-cmd="settings" title="Settings">⚙</button>
+    </header>
+
+    <main id="work">
+      <aside id="left">
+        <div class="tabs" id="left-tabs"><button data-tab="pages">Pages</button><button data-tab="layers">Layers</button></div>
+        <div class="panel-body" id="left-body"></div>
+      </aside>
+      <div id="stage">
+        <div id="board"><div id="pages-host"></div><div id="overlay"></div></div>
+      </div>
+      <aside id="right">
+        <div class="tabs" id="right-tabs"><button data-tab="props">Properties</button><button data-tab="colours">Colours</button><button data-tab="brand">Brand kit</button><button data-tab="check">Check</button></div>
+        <div class="panel-body" id="right-body"></div>
+      </aside>
+    </main>
+
+    <footer id="statusbar">
+      <div class="seg seg-xs" id="units"><button data-v="mm">mm</button><button data-v="cm">cm</button><button data-v="px">px</button></div>
+      <span id="st-dpi" class="muted"></span>
+      <span id="st-pos" class="muted"></span>
+      <span class="spacer"></span>
+      <span id="st-page"></span>
+      <span class="muted">·</span>
+      <span id="st-profile" class="muted"></span>
+    </footer>
+  </div>
+
+  <div id="loading"><div class="spinner">Loading…</div></div>
+
+  <script src="../node_modules/pdf-lib/dist/pdf-lib.min.js"></script>
+  <script src="../node_modules/@pdf-lib/fontkit/dist/fontkit.umd.min.js"></script>
+  <script src="brand.js"></script>
+  <script src="util.js"></script>
+  <script src="model.js"></script>
+  <script src="color.js"></script>
+  <script src="fonts.js"></script>
+  <script src="cmyk-jpeg.js"></script>
+  <script src="render.js"></script>
+  <script src="pdf.js"></script>
+  <script src="preflight.js"></script>
+  <script src="editor.js"></script>
+  <script src="panels.js"></script>
+  <script src="updates.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

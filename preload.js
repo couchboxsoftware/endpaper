@@ -1,0 +1,26 @@
+/* The only bridge between the page and the system. */
+const { contextBridge, ipcRenderer } = require('electron');
+
+const call = (ch) => (...a) => ipcRenderer.invoke(ch, ...a);
+const channels = [
+  'app:info', 'app:close-ok', 'app:confirm', 'app:reveal', 'app:readAppFile',
+  'settings:get', 'settings:set', 'changelog:get',
+  'file:open', 'file:read', 'file:save', 'file:export', 'file:exportMany', 'recent:list', 'recent:forget',
+  'image:pick', 'fonts:list', 'fonts:read', 'fonts:add',
+  'icc:list', 'icc:read', 'icc:add',
+  'brandkit:get', 'brandkit:set',
+  'templates:list', 'templates:save', 'templates:read', 'templates:delete',
+  'bin:list', 'bin:restore', 'bin:empty',
+  'recovery:write', 'recovery:clear', 'recovery:list', 'recovery:read',
+  'update:state', 'update:check', 'update:download', 'update:install', 'update:releases', 'update:prepared',
+];
+const api = {};
+for (const ch of channels) {
+  const [a, b] = ch.split(':');
+  (api[a] = api[a] || {})[b] = call(ch);
+}
+api.on = (ch, fn) => {
+  if (!['app:close-request', 'app:open-file', 'update', 'update:prepare', 'update-dry'].includes(ch)) return;
+  ipcRenderer.on(ch, (_e, ...a) => fn(...a));
+};
+contextBridge.exposeInMainWorld('ep', api);

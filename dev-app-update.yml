@@ -1,0 +1,5 @@
+# Only used when testing updates from the source folder (EP_UPDATE_URL); the installed app
+# gets its own app-update.yml from "build.publish" in package.json.
+provider: generic
+url: http://localhost:8787/
+updaterCacheDirName: endpaper-updater-test

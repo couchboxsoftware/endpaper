@@ -1,0 +1,64 @@
+{
+  "name": "endpaper",
+  "productName": "Endpaper",
+  "version": "0.1.0",
+  "description": "Print-ready layouts and books, in CMYK.",
+  "main": "main.js",
+  "author": "Couchbox Software",
+  "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/couchboxsoftware/endpaper.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --publish never",
+    "release": "node tools/release.js"
+  },
+  "dependencies": {
+    "@pdf-lib/fontkit": "1.1.1",
+    "electron-updater": "6.8.12",
+    "lcms-wasm": "1.0.5",
+    "pdf-lib": "1.17.1"
+  },
+  "devDependencies": {
+    "electron": "45.2.1",
+    "electron-builder": "26.18.1"
+  },
+  "allowScripts": {
+    "electron-winstaller@5.4.0": true
+  },
+  "build": {
+    "appId": "com.couchboxsoftware.endpaper",
+    "productName": "Endpaper",
+    "copyright": "Couchbox Software",
+    "directories": { "output": "dist", "buildResources": "build" },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "renderer/**/*",
+      "build/icon.png",
+      "CHANGELOG.md",
+      "package.json"
+    ],
+    "win": {
+      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "Endpaper-Setup-${version}.${ext}",
+      "shortcutName": "Endpaper",
+      "deleteAppDataOnUninstall": false
+    },
+    "fileAssociations": [
+      { "ext": "endpaper", "name": "Endpaper design", "description": "Endpaper design", "role": "Editor" }
+    ],
+    "publish": [
+      { "provider": "github", "owner": "couchboxsoftware", "repo": "endpaper", "releaseType": "release" }
+    ]
+  }
+}
