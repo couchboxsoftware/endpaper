@@ -1129,7 +1129,19 @@ const App = (() => {
     });
     window.addEventListener('keydown', onKey);
     ep.on('app:close-request', async () => {
-      if (await confirmDiscard()) ep.app.closeOk();
+      ep.app.closeAck();
+      let ok;
+      try {
+        ok = await confirmDiscard();
+      } catch (e) {
+        // Never trap someone in the app: if asking fails, keep a recovery copy and close.
+        console.error(e);
+        try {
+          if (S.doc && S.dirty) await ep.recovery.write({ id: S.doc.id, text: JSON.stringify({ ...S.doc, filePath: S.filePath }) });
+        } catch (_) {}
+        ok = true;
+      }
+      if (ok) ep.app.closeOk();
     });
     ep.on('app:open-file', (p) => openFile(p));
   }
@@ -1197,11 +1209,14 @@ const App = (() => {
     const info = await ep.app.info();
     S.version = info.version;
     S.settings = await ep.settings.get();
+    ep.app.boot('settings');
     $('#brand-btn').innerHTML = BRAND.icon;
     bindChrome();
     Editor.init();
     Panels.init();
-    await Promise.all([Fonts.init(), kit.load(), loadProfile()]);
+    // Each finished piece moves the splash screen's bar along.
+    const step = (name) => (r) => (ep.app.boot(name), r);
+    await Promise.all([Fonts.init().then(step('fonts')), kit.load().then(step('brand kit')), loadProfile().then(step('colour'))]);
     showLoading(false);
     Updates.init();
     // After an update: open the design that was open, on the page it was on.
@@ -1212,6 +1227,7 @@ const App = (() => {
       if (S.doc) toast(`Updated to Endpaper ${S.version}. “${S.doc.name}” is open where you left it.`, { ms: 6000 });
     } else if (info.openFile) await openFile(info.openFile);
     else await showHome();
+    ep.app.boot('ready');
     if (info.updated) showWhatsNew();
   }
 
@@ -1224,5 +1240,7 @@ const App = (() => {
 
 window.addEventListener('DOMContentLoaded', () => App.init().catch((e) => {
   console.error(e);
+  ep.app.boot('ready');
+  ep.on('app:close-request', () => ep.app.closeOk());
   document.body.innerHTML = `<pre style="padding:20px;color:#fff">Endpaper couldn't start:\n${esc(e.stack || e.message)}</pre>`;
 }));

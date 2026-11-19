@@ -19,6 +19,15 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.1 · 19 Nov 2026
+The close button works, and Endpaper opens with a splash screen.
+
+### New
+- An open-book splash screen shows while Endpaper loads your fonts and printing profile. When everything is ready, the page turns and Endpaper opens.
+
+### Fixed
+- The close button (X) closes Endpaper. It still asks first if your design has unsaved changes.
+
 ## 0.1.0 · 16 Nov 2026
 Endpaper makes print-ready designs and books in CMYK.
 

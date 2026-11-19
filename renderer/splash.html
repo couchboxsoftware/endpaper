@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' app:; script-src 'self' app:; style-src 'self' 'unsafe-inline'">
+<title>Endpaper</title>
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; cursor: default; }
+  body { -webkit-app-region: drag; transition: opacity 0.38s ease, transform 0.38s ease; }
+  body.out { opacity: 0; transform: scale(0.985); }
+  svg#s { display: block; width: 100vw; height: 100vh; }
+
+  /* the book opens: cover first, then the pages fall open from the spine */
+  .cover { opacity: 0; transform-origin: 160px 110px; animation: pop 0.5s ease forwards; }
+  .page-l { transform-origin: 160px 110px; animation: open-l 0.75s 0.12s cubic-bezier(.2,.8,.25,1) both; }
+  .page-r { transform-origin: 160px 110px; animation: open-r 0.75s 0.12s cubic-bezier(.2,.8,.25,1) both; }
+  .edges { opacity: 0; animation: fade 0.4s 0.75s ease forwards; }
+  .draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 0.8s cubic-bezier(.6,.1,.3,1) forwards; }
+  .mark path { animation-delay: 0.55s; }
+  .mark path:nth-child(2) { animation-delay: 0.68s; }
+  .mark path:nth-child(3) { animation-delay: 1s; animation-duration: 0.35s; }
+  .word { opacity: 0; animation: rise 0.6s 0.95s ease forwards; }
+  .meta { opacity: 0; animation: fade 0.5s 1.15s ease forwards; }
+  .patch { opacity: 0.14; transition: opacity 0.35s ease, transform 0.35s ease; transform-box: fill-box; transform-origin: center; }
+  .patch.on { opacity: 1; transform: scale(1.12); }
+  .ribbon { opacity: 0; animation: fade 0.3s 0.6s ease forwards; }
+
+  /* the right-hand page typesets itself */
+  .set { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 0.45s ease-out forwards; }
+  .pic { opacity: 0; animation: develop 0.7s ease-out forwards; }
+  .content.away { transition: opacity 0.18s ease; opacity: 0; }
+
+  @keyframes pop { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: none; } }
+  @keyframes open-l { from { transform: scaleX(0.05); } to { transform: none; } }
+  @keyframes open-r { from { transform: scaleX(0.05); } to { transform: none; } }
+  @keyframes fade { to { opacity: 1; } }
+  @keyframes draw { to { stroke-dashoffset: 0; } }
+  @keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  @keyframes develop { from { opacity: 0; filter: saturate(0) brightness(1.6); } to { opacity: 1; filter: none; } }
+  @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.01s !important; animation-delay: 0s !important; } }
+</style>
+</head>
+<body>
+<!-- 320x200 design grid, drawn at 2x (640x400 window). Only the book is painted; the rest is see-through. -->
+<svg id="s" viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <path id="pl" d="M160 46C130 30 80 28 36 36V162C80 154 130 156 160 172Z"/>
+    <path id="pr" d="M160 46C190 30 240 28 284 36V162C240 154 190 156 160 172Z"/>
+    <clipPath id="clip-l"><use href="#pl"/></clipPath>
+    <clipPath id="clip-r"><use href="#pr"/></clipPath>
+    <linearGradient id="gutter" x1="0" x2="1">
+      <stop offset="0" stop-color="#000" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#000" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" x2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#fff" stop-opacity="0.07"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <pattern id="dots" width="3" height="3" patternUnits="userSpaceOnUse" patternTransform="rotate(15)">
+      <circle cx="1.5" cy="1.5" r="0.75" fill="#000" fill-opacity="0.35"/>
+    </pattern>
+  </defs>
+
+  <!-- hardback cover, peeking out round the pages -->
+  <path class="cover" fill="#E4007C" d="M160 53C127 37 77 35 27 43V171C77 163 127 165 160 181C193 165 243 163 293 171V43C243 35 193 37 160 53Z"/>
+  <!-- page edges: the stack of paper under the open pages -->
+  <g class="edges" fill="none" stroke="#3a3741" stroke-width="0.7">
+    <path d="M33 166C78 158 128 160 160 176C192 160 242 158 287 166"/>
+    <path d="M30 169C77 161 127 163 160 179C193 163 243 161 290 169"/>
+  </g>
+
+  <!-- left page: the logo, the name and how loading is going -->
+  <g class="page-l">
+    <use href="#pl" fill="#1a191e"/>
+    <g clip-path="url(#clip-l)">
+      <g class="mark" id="mark" transform="translate(72 44) scale(1.08)" fill="none" stroke="#E4007C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></g>
+      <text class="word" x="98" y="106" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="18" letter-spacing="-0.4" fill="#f2f0f5"><tspan font-weight="500">end</tspan><tspan font-weight="800">paper</tspan></text>
+      <g class="meta">
+        <text id="ver" x="98" y="119" text-anchor="middle" font-family="Segoe UI, sans-serif" font-size="5.4" fill="#76717f"></text>
+        <!-- one CMYK patch per piece loaded: settings, fonts, brand kit, colour profile -->
+        <rect class="patch" x="85" y="130" width="5" height="5" fill="#00A0E3"/>
+        <rect class="patch" x="92" y="130" width="5" height="5" fill="#E4007C"/>
+        <rect class="patch" x="99" y="130" width="5" height="5" fill="#FFE600"/>
+        <rect class="patch" x="106" y="130" width="5" height="5" fill="#050505" stroke="#55515d" stroke-width="0.4"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- right page: a layout that sets itself, again and again -->
+  <g class="page-r">
+    <use href="#pr" fill="#1d1c22"/>
+    <g clip-path="url(#clip-r)"><g id="content" class="content"></g></g>
+  </g>
+
+  <!-- the page being turned (drawn by splash.js) -->
+  <g id="turn" pointer-events="none">
+    <path id="turn-page" fill="#1d1c22"/>
+    <path id="turn-sheen" fill="url(#sheen)"/>
+  </g>
+
+  <!-- the gutter shadow down the spine -->
+  <rect class="edges" x="146" y="30" width="28" height="150" fill="url(#gutter)" clip-path="url(#spine-clip)" pointer-events="none"/>
+  <clipPath id="spine-clip"><use href="#pl"/><use href="#pr"/></clipPath>
+
+  <!-- ribbon bookmark: drops down as Endpaper loads -->
+  <path class="ribbon" id="ribbon" fill="#E4007C" d="M156 174H164V174L160 174L156 174Z"/>
+</svg>
+<script src="brand.js"></script>
+<script src="splash.js"></script>
+</body>
+</html>

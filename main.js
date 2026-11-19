@@ -65,6 +65,9 @@ const saveSettings = () => writeJSON(user('settings.json'), settings);
 /* ---------- window ---------- */
 let win = null;
 let forceClose = false;
+let rendererGone = false;
+let closeAcked = false;
+let closeTimer = null;
 let pendingOpen = fileFromArgs(process.argv);
 
 function fileFromArgs(argv) {
@@ -94,11 +97,8 @@ function createWindow() {
     webPreferences: { preload: path.join(ROOT, 'preload.js'), contextIsolation: true, nodeIntegration: false, spellcheck: true },
   });
   win.removeMenu();
-  win.once('ready-to-show', () => {
-    if (settings.openMode === 'maximised' || (settings.openMode === 'last' && settings.maximized)) win.maximize();
-    if (settings.openMode === 'fullscreen') win.setFullScreen(true);
-    win.show();
-  });
+  // The window stays hidden behind the splash until the page says it's ready (see boot below).
+  win.once('ready-to-show', () => (splash ? null : showMainWindow()));
   const remember = () => {
     if (!win || win.isDestroyed() || win.isFullScreen()) return;
     settings.maximized = win.isMaximized();
@@ -109,10 +109,23 @@ function createWindow() {
   win.on('close', (e) => {
     remember();
     saveSettings();
-    if (forceClose) return;
+    if (forceClose || rendererGone) return;
     e.preventDefault();
+    // The page asks about unsaved changes, then answers app:close-ok. If it doesn't even say it
+    // got the request (it failed to start, or is stuck), ask whether to close rather than ignore the X.
+    closeAcked = false;
     win.webContents.send('app:close-request');
+    clearTimeout(closeTimer);
+    closeTimer = setTimeout(async () => {
+      if (closeAcked || !win || win.isDestroyed()) return;
+      const r = await dialog.showMessageBox(win, { type: 'warning', buttons: ['Close Endpaper', 'Keep waiting'], defaultId: 1, cancelId: 1, title: 'Endpaper', message: "Endpaper isn't responding.", detail: 'If you close it now, changes since the last save may be lost. Endpaper keeps a recovery copy every 20 seconds and offers it next time.', noLink: true });
+      if (r.response === 0 && !closeAcked && win && !win.isDestroyed()) {
+        forceClose = true;
+        win.close();
+      }
+    }, 2500);
   });
+  win.webContents.on('render-process-gone', () => (rendererGone = true));
   win.webContents.on('before-input-event', (e, input) => {
     if (input.type === 'keyDown' && input.control && input.shift && input.key.toLowerCase() === 'i') win.webContents.toggleDevTools();
   });
@@ -126,6 +139,7 @@ function createWindow() {
           exec: (js) => win.webContents.executeJavaScript(js, true),
           shot: async (file) => fs.writeFileSync(file, (await win.webContents.capturePage()).toPNG()),
           write: (file, b64) => fs.writeFileSync(file, Buffer.from(b64, 'base64')),
+          splash: () => splash,
         });
       } catch (e) {
         console.error('TEST FAILED', e);
@@ -136,11 +150,94 @@ function createWindow() {
   }
 }
 
-app.on('second-instance', (_e, argv) => {
-  if (!win) return;
-  if (win.isMinimized()) win.restore();
+function showMainWindow() {
+  if (!win || win.isDestroyed() || win.isVisible()) return;
+  if (settings.openMode === 'maximised' || (settings.openMode === 'last' && settings.maximized)) win.maximize();
+  if (settings.openMode === 'fullscreen') win.setFullScreen(true);
   win.show();
   win.focus();
+}
+
+/* ---------- splash ---------- */
+// An open book while fonts and the colour profile load (renderer/splash.html). Silent.
+let splash = null;
+let splashLoaded = false;
+let splashDone = false;
+const splashQueue = [];
+
+function createSplash() {
+  splash = new BrowserWindow({
+    width: 640,
+    height: 400,
+    frame: false,
+    transparent: true, // only the book is painted
+    hasShadow: false,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    center: true,
+    show: false,
+    backgroundColor: '#00000000',
+    title: 'Endpaper',
+    icon: path.join(ROOT, 'build', 'icon.png'),
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  splash.once('ready-to-show', () => {
+    if (!splash || splash.isDestroyed()) return;
+    splash.show();
+  });
+  splash.webContents.once('did-finish-load', () => {
+    splashLoaded = true;
+    splashQueue.splice(0).forEach(runSplash);
+  });
+  splash.webContents.on('will-navigate', (e) => e.preventDefault());
+  // Closing the splash (Alt+F4) before the app is up just shows the app.
+  splash.on('closed', () => {
+    splash = null;
+    if (!splashDone) showMainWindow();
+  });
+  splash.loadURL('app://endpaper/renderer/splash.html?v=' + encodeURIComponent(VERSION));
+  // Safety net: never leave anyone looking at the splash.
+  setTimeout(finishSplash, 15000);
+}
+function runSplash(code) {
+  if (!splash || splash.isDestroyed()) return;
+  if (!splashLoaded) return splashQueue.push(code);
+  splash.webContents.executeJavaScript(code).catch(() => {});
+}
+function finishSplash() {
+  if (splashDone) return;
+  splashDone = true;
+  if (!splash) return showMainWindow();
+  // The splash decides when it's done: it holds its page for a few seconds, turns it to an empty
+  // page and fades, and only then does the app appear. A safety net covers a stuck splash.
+  const handOver = () => {
+    clearTimeout(safety);
+    showMainWindow();
+    if (splash && !splash.isDestroyed()) splash.close();
+  };
+  const safety = setTimeout(handOver, 8000);
+  const go = () => {
+    if (!splash || splash.isDestroyed()) return handOver();
+    splash.webContents.executeJavaScript('window.finish ? window.finish() : true').catch(() => {}).then(handOver);
+  };
+  if (splashLoaded) go();
+  else splash.webContents.once('did-finish-load', go);
+}
+// The page reports each piece as it loads: settings, fonts, brand kit, colour, then ready.
+ipcMain.handle('app:boot', (_e, step) => {
+  if (step === 'ready') finishSplash();
+  else runSplash(`window.step && step(${JSON.stringify(String(step))})`);
+});
+
+app.on('second-instance', (_e, argv) => {
+  if (!win) return;
+  if (!splashDone && splash) splash.focus();
+  else {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  }
   const f = fileFromArgs(argv);
   if (f) win.webContents.send('app:open-file', f);
 });
@@ -153,6 +250,7 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).toString());
   });
   purgeBin();
+  if (!process.env.EP_TEST || process.env.EP_TEST_SPLASH) createSplash();
   createWindow();
   startUpdater();
 });
@@ -209,6 +307,9 @@ handle('app:info', () => {
   const f = pendingOpen;
   pendingOpen = null;
   return { version, updated, firstRun, openFile: f, reopen, userData: app.getPath('userData') };
+});
+handle('app:close-ack', () => {
+  closeAcked = true;
 });
 handle('app:close-ok', () => {
   forceClose = true;
