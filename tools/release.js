@@ -4,7 +4,9 @@
 //
 // 1. Checks CHANGELOG.md has an entry for the version (that entry becomes the release notes,
 //    the "Update available" banner text and What's new).
-// 2. Sets the version in package.json, builds the installer (dist/Endpaper-Setup-x.y.z.exe).
+// 2. Sets the version in package.json, then builds the installer in a short folder
+//    (%TEMP%\endpaper-build, because the installer tool fails on long paths) and brings
+//    Endpaper-Setup-x.y.z.exe, its .blockmap and latest.yml back to dist\.
 // 3. Commits, tags vX.Y.Z, pushes, and creates the GitHub release with the installer,
 //    latest.yml and the blockmap (electron-updater needs all three).
 //
@@ -12,7 +14,7 @@
 // --dry-run builds and prints the notes without committing or publishing.
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const args = process.argv.slice(2);
@@ -81,13 +83,26 @@ if (pkg.version !== version) {
   fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
   console.log(`Version set to ${version}.`);
 }
-console.log(`\nBuilding Endpaper ${version}…\n`);
-run(process.execPath, [require.resolve('electron-builder/cli.js'), '--win', '--publish', 'never']);
+// The installer tool (NSIS) fails on long paths, so copy the project to a short folder and build
+// there (Couchbox's short-folder build), then bring the finished files back to dist\.
+const short = path.join(process.env.TEMP || require('os').tmpdir(), 'endpaper-build');
+console.log(`\nCopying the project to ${short}…`);
+const copy = spawnSync('robocopy', [ROOT, short, '/MIR', '/XD', path.join(ROOT, 'dist'), path.join(ROOT, '.git'), path.join(short, 'dist'), '/NFL', '/NDL', '/NJH', '/NJS', '/NP'], { stdio: 'inherit' });
+// robocopy's exit codes 0-7 mean it worked (they say what it copied); 8 and up are failures.
+if (copy.status === null || copy.status >= 8) fail(`Copying the project to ${short} failed (robocopy ${copy.status}).`);
 
-const dist = path.join(ROOT, 'dist');
+console.log(`\nBuilding Endpaper ${version} in ${short}…\n`);
+run(process.execPath, [path.join(short, 'node_modules', 'electron-builder', 'cli.js'), '--win', '--publish', 'never'], { cwd: short });
+
 const exe = `Endpaper-Setup-${version}.exe`;
-const files = [exe, `${exe}.blockmap`, 'latest.yml'].map((f) => path.join(dist, f));
-for (const f of files) if (!fs.existsSync(f)) fail(`The build didn't make ${path.basename(f)}.`);
+const names = [exe, `${exe}.blockmap`, 'latest.yml'];
+for (const n of names) if (!fs.existsSync(path.join(short, 'dist', n))) fail(`The build didn't make ${n}.`);
+const dist = path.join(ROOT, 'dist');
+fs.mkdirSync(dist, { recursive: true });
+for (const n of names) fs.copyFileSync(path.join(short, 'dist', n), path.join(dist, n));
+const files = names.map((n) => path.join(dist, n));
+for (const f of files) if (!fs.existsSync(f)) fail(`${path.basename(f)} didn't come back to dist.`);
+console.log(`Built ${names.join(', ')}, now in dist.`);
 const notesFile = path.join(dist, `release-notes-${version}.md`);
 fs.writeFileSync(notesFile, notes.body + '\n');
 console.log(`\nRelease notes:\n\n${notes.body}\n`);

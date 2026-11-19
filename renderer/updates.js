@@ -140,5 +140,6 @@ const Updates = (() => {
     set(await ep.update.state());
   }
 
-  return { init, settingsHtml, get state() { return st; } };
+  // refresh: the banner mentions the open design and whether it is saved; app.js calls this when either changes.
+  return { init, settingsHtml, refresh: () => banner() && render(), get state() { return st; } };
 })();

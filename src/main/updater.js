@@ -1,28 +1,27 @@
 // In-app updates via electron-updater. New versions are published to GitHub Releases
 // (see "build.publish" in package.json and tools/release.js).
 //
-// Flow: check quietly on start-up and every few hours -> tell the window "update available"
+// Flow: check quietly as soon as the window is up and every 6 hours -> tell the window "update available"
 // -> the user clicks "Update now" -> download with progress -> make sure the open design is
 // saved (prepare) -> remember what was open -> restart into the new version, which reopens it.
 // Nothing is downloaded until the user asks, and nothing installs while work is unsaved.
 //
-// Testing: set EP_UPDATE_URL to a local folder server (http://localhost:PORT/) that holds
-// latest.yml and the installer. Only localhost addresses are accepted. EP_UPDATE_DRY=1 stops
+// Testing: set ENDPAPER_UPDATE_URL to a local folder server (http://localhost:PORT/) that holds
+// latest.yml and the installer. Only localhost addresses are accepted. ENDPAPER_UPDATE_DRY=1 stops
 // short of installing (the test checks everything up to that point).
 const fs = require('fs');
 const path = require('path');
 const { app, shell } = require('electron');
 
 const CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
-const FIRST_CHECK_DELAY_MS = 8000;
 
 // prepare(): asks the window to save the open design. Resolves { ok, files } where files are
 // what to reopen after the update; ok is false when the user hasn't saved (yet).
 // beforeInstall(files): remembers the files and lets the window close without asking.
 function create({ send, prepare, beforeInstall }) {
-  const testUrl = (process.env.EP_UPDATE_URL || '').trim();
+  const testUrl = (process.env.ENDPAPER_UPDATE_URL || '').trim();
   const useTestUrl = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(testUrl);
-  const dry = process.env.EP_UPDATE_DRY === '1';
+  const dry = process.env.ENDPAPER_UPDATE_DRY === '1';
   const enabled = app.isPackaged || useTestUrl;
 
   // Endpaper's own version (app.getVersion() can report Electron's when run from source).
@@ -110,9 +109,10 @@ function create({ send, prepare, beforeInstall }) {
     }
   }
 
+  // Called once the main window is showing: check straight away, then every 6 hours.
   function start() {
     if (!autoUpdater) return;
-    setTimeout(() => check(false), FIRST_CHECK_DELAY_MS);
+    check(false);
     setInterval(() => check(false), CHECK_EVERY_MS).unref?.();
   }
 

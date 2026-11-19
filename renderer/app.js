@@ -826,7 +826,6 @@ const App = (() => {
   async function openSettings(tab) {
     tab = tab || S.settings.settingsTab || 'general';
     const profiles = await ep.icc.list();
-    const changelog = await ep.changelog.get();
     const set = S.settings;
     const m = openModal({
       title: 'Settings',
@@ -854,9 +853,10 @@ const App = (() => {
         <div class="stab" data-tab="hints"><div class="hints-section">${Hints.settingsHtml()}</div></div>
         <div class="stab" data-tab="app">
           <p>${BRAND.wordmark} <span class="muted">version ${esc(S.version)}</span></p>
+          <p class="muted">Made by Couchbox Software.</p>
           <div class="up-section">${Updates.settingsHtml()}</div>
           <h5>What's new</h5>
-          <div class="whatsnew">${changelog.map(whatsNewEntry).join('')}</div>
+          <div class="whatsnew" id="settings-whatsnew"></div>
         </div>`,
     });
     const showTab = (t) => {
@@ -865,6 +865,7 @@ const App = (() => {
       ep.settings.set({ settingsTab: t }).then((s) => (S.settings = s));
     };
     showTab(tab);
+    WhatsNew.renderSettings();
     m.el.addEventListener('click', async (e) => {
       const t = e.target.closest('[data-t]');
       if (t) return showTab(t.dataset.t);
@@ -879,6 +880,8 @@ const App = (() => {
         $('.hints-section', m.el).innerHTML = Hints.settingsHtml();
         return toast(hr ? 'That hint will show again.' : 'All hints will show again.');
       }
+      const wn = e.target.closest('[data-wn]');
+      if (wn) return WhatsNew.act(wn.dataset.wn);
       if (e.target.closest('[data-act="add-profile"]')) {
         const r = await ep.icc.add();
         if (!r) return;
@@ -901,16 +904,6 @@ const App = (() => {
     if (S.doc) render();
     updateStatusUnits();
   }
-  const whatsNewEntry = (e) =>
-    `<div class="wn"><div class="wn-head"><b>${esc(e.version)}</b><span class="muted">${esc(e.date)}</span></div><p>${esc(e.headline)}</p>${e.groups.map((g) => `<h6>${esc(g.name)}</h6><ul>${g.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>`).join('')}</div>`;
-  async function showWhatsNew() {
-    const log = await ep.changelog.get();
-    const e = log[0];
-    if (!e) return;
-    const m = openModal({ title: `What's new in ${e.version}`, body: whatsNewEntry(e) + `<div class="modal-actions"><button class="btn btn-accent" data-a="ok">Got it</button></div>` });
-    $('[data-a="ok"]', m.el).onclick = () => m.close();
-  }
-
   /* ================= the start screen ================= */
   async function showHome() {
     $('#editor').hidden = true;
@@ -925,7 +918,7 @@ const App = (() => {
         <button class="big-btn" data-h="new-book"><span class="bb-icon">${BRAND.icon}</span><b>New book</b><span>Spreads, page numbers and a cover with the spine worked out</span></button>
         <button class="big-btn" data-h="open"><span class="bb-icon">⇪</span><b>Open…</b><span>An Endpaper design (.endpaper)</span></button>
       </section>
-      ${templates.length ? `<section><h3>Your templates</h3><div class="tpl-grid">${templates.map((t, i) => `<button class="tpl" data-tpl="${i}" title="Start a new design from this template">${t.thumb ? `<img src="${t.thumb}" alt="">` : '<div class="tpl-empty"></div>'}<b>${esc(t.name)}</b><span class="muted">${timeAgo(t.modified)}</span></button>`).join('')}</div><p class="hint">Right-click a template to delete it. Deleted templates stay in the <a href="#" data-h="bin">bin</a> for 30 days.</p></section>` : `<section><h3>Your templates</h3><p class="hint">Save any design as a template (⋯ menu, Save as template) and it shows here, ready to copy for the next job. <a href="#" data-h="bin">Bin</a></p></section>`}
+      ${templates.length ? `<section><h3>Your templates</h3><div class="tpl-grid">${templates.map((t, i) => `<button class="tpl" data-tpl="${i}" title="Start a new design from this template">${t.thumb ? `<img src="${t.thumb}" alt="">` : '<div class="tpl-empty"></div>'}<b>${esc(t.name)}</b><span class="muted">${timeAgo(t.modified)}</span></button>`).join('')}</div><p class="hint">Right-click a template to delete it. Deleted templates stay in the <a href="#" data-h="bin">bin</a> for 30 days.</p></section>` : `<section><h3>Your templates</h3><p class="hint">Save any design as a template (File, Save as template) and it shows here, ready to copy for the next job. <a href="#" data-h="bin">Bin</a></p></section>`}
       ${recent.length ? `<section><h3>Recent</h3><div class="recent">${recent.map((r, i) => `<button class="recent-row" data-recent="${i}"><b>${esc(r.name)}</b><span class="muted">${esc(r.path)}</span><span class="muted">${timeAgo(r.modified)}</span></button>`).join('')}</div></section>` : ''}
       <footer class="muted">Version ${esc(S.version)} · <a href="#" data-h="whatsnew">What's new</a></footer>
     </div>`;
@@ -940,7 +933,7 @@ const App = (() => {
         if (a === 'open') return openFile();
         if (a === 'settings') return openSettings();
         if (a === 'bin') return binDialog();
-        if (a === 'whatsnew') return openSettings('app');
+        if (a === 'whatsnew') return WhatsNew.openInSettings();
       }
       const t = e.target.closest('[data-tpl]');
       if (t) return fromTemplate(templates[+t.dataset.tpl]);
@@ -1089,6 +1082,7 @@ const App = (() => {
     document.title = `${S.dirty ? '• ' : ''}${name} - Endpaper`;
     $('#doc-name').textContent = name;
     $('#doc-dirty').hidden = !S.dirty;
+    Updates.refresh();
   }
   function updateToolbar() {
     $$('#tools [data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === S.tool));
@@ -1149,7 +1143,7 @@ const App = (() => {
           { label: 'Show file in folder', disabled: !S.filePath, run: () => ep.app.reveal(S.filePath) },
           { label: 'Close design', key: 'Ctrl+W', run: () => closeDoc() },
           '-',
-          { label: "What's new", run: () => openSettings('app') },
+          { label: "What's new", run: () => WhatsNew.openInSettings() },
           { label: 'Settings', run: () => openSettings() },
         ]);
     });
@@ -1202,7 +1196,7 @@ const App = (() => {
     }
     if (ctrl && k.toLowerCase() === 'o') return e.preventDefault(), openFile();
     if (ctrl && k.toLowerCase() === 'n') return e.preventDefault(), newDialog('print');
-    if (ctrl && k === ',') return e.preventDefault(), openSettings('general');
+    if (ctrl && k === ',') return e.preventDefault(), openSettings(); // on the tab used last (standard 1.14)
     if ($('.modal-overlay')) return;
     if (!S.doc || isTyping()) return;
     if (ctrl && k.toLowerCase() === 'e') return e.preventDefault(), openExport();
@@ -1323,8 +1317,9 @@ const App = (() => {
           '-',
           {
             label: 'Se&ttings',
+            key: 'Ctrl+,',
             items: [
-              { label: '&General…', key: 'Ctrl+,', run: () => openSettings('general') },
+              { label: '&General…', run: () => openSettings('general') },
               { label: '&Colour and printing profile…', run: () => openSettings('colour') },
               { label: '&Export…', run: () => openSettings('export') },
               { label: '&Hints…', run: () => openSettings('hints') },
@@ -1456,7 +1451,7 @@ const App = (() => {
       {
         title: '&Help',
         items: [
-          { label: "&What's new", run: () => showWhatsNew() },
+          { label: "&What's new", run: () => WhatsNew.openInSettings() },
           { label: '&Check for updates', run: () => openSettings('app') },
           { label: '&Release notes on GitHub', run: () => ep.update.releases() },
           { label: 'Show all &hints again', run: async () => { await Hints.resetAll(); toast('All hints will show again.'); } },
@@ -1496,13 +1491,14 @@ const App = (() => {
     } else if (info.openFile) await openFile(info.openFile);
     else await showHome();
     ep.app.boot('ready');
-    if (info.updated) showWhatsNew();
+    // After an update: the new version's notes, once, in the bottom-left corner.
+    if (info.whatsNew) WhatsNew.maybeShowCard(info.whatsNew);
   }
 
   return {
     S, unit, history, change, render, markDirty, select, selectionChanged, goTo, setTool,
     addItem, pickPhotoFor, setPhoto, placePhotos, startCrop, endCrop, cmd, align, pageOp,
-    kit, status, zoomChanged, init, openExport, save, newDocument, loadDoc, setCoverLayout, overrideMaster, resetToMaster,
+    kit, status, zoomChanged, init, openExport, save, newDocument, loadDoc, setCoverLayout, overrideMaster, resetToMaster, openSettings,
   };
 })();
 

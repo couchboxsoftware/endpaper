@@ -3,3 +3,5 @@ dist/
 *.log
 .DS_Store
 Thumbs.db
+# Check sheets and previews made by tools/ (not committed)
+build/*preview*

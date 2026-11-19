@@ -5,6 +5,7 @@
   --line: #34323a;
   --text: #ecebf0;
   --muted: #9a97a6;
+  --faint: #76717f;
   --accent: #e4007c;
   --accent-2: #ff3d9e;
   --ok: #3ccf8e;
@@ -65,11 +66,12 @@ input[type='color'] { width: 44px; height: 26px; border: 1px solid var(--line); 
 
 /* ---------- brand ---------- */
 .ep-icon { width: 22px; height: 18px; display: block; }
-.ep-word { font-weight: 500; letter-spacing: -0.02em; }
-.ep-word b { font-weight: 800; }
+/* The wordmark (standard 1.6): both halves bold and a little open, "paper" in the accent. */
+.ep-word { font-family: 'Segoe UI', sans-serif; font-weight: 700; letter-spacing: 0.8px; color: #eee; line-height: 1; white-space: nowrap; }
+.ep-word b { font-weight: 700; color: var(--accent); }
 .brand { display: flex; align-items: center; gap: 8px; }
 .brand.big .ep-icon { width: 46px; height: 38px; }
-.brand.big .ep-word { font-size: 30px; }
+.brand.big .ep-word { font-size: 30px; letter-spacing: 1px; }
 .brand.big .ep-icon path { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 1.1s ease forwards; }
 .brand.big .ep-icon path:nth-child(2) { animation-delay: 0.15s; }
 .brand.big .ep-icon path:nth-child(3) { animation-delay: 0.35s; }
@@ -259,11 +261,29 @@ body.linking #stage { cursor: alias; }
 .ex-progress span { font-size: 12px; color: var(--muted); min-width: 180px; }
 .settings .tabs { margin: 0 -16px 10px; padding: 0 16px; }
 .stab { min-height: 220px; }
+/* What's new (standard 1.12): the coloured New / Improved / Fixed titles are the same in every
+   Couchbox Software app. Sizes are a step down from Couchbox's, as a work app. */
 .whatsnew { max-height: 46vh; overflow: auto; }
-.wn { border-bottom: 1px solid var(--line); padding: 8px 0; }
-.wn-head { display: flex; gap: 10px; align-items: baseline; }
-.wn ul { margin: 2px 0; padding-left: 18px; line-height: 1.45; }
-.wn p { margin: 4px 0; }
+.wn-ver { border-top: 1px solid var(--line); padding: 12px 0; }
+.wn-ver:first-child { border-top: 0; padding-top: 0; }
+.wn-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.wn-num { font-size: 15px; font-weight: 600; }
+.wn-date { font-size: 12px; color: var(--faint); }
+.wn-you { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 3px; background: rgba(228, 0, 124, 0.15); color: var(--accent-2); border: 1px solid rgba(228, 0, 124, 0.45); }
+.wn-line { font-size: 13px; color: var(--muted); margin: 3px 0 6px; }
+.wn-grp { font-size: 11px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; margin: 8px 0 2px; }
+.wn-grp.new { color: #7fd29a; }
+.wn-grp.imp { color: #8cb8f0; }
+.wn-grp.fix { color: #f0b46a; }
+.wn-ver ul, #wn-card ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.55; color: #d4d4d4; }
+.wn-more { margin-top: 8px; }
+/* The card after an update: bottom-left, once. */
+#wn-card { position: fixed; left: 20px; bottom: 40px; z-index: 45; width: min(380px, calc(100vw - 40px)); max-height: calc(100vh - 120px); overflow: auto; background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--accent); border-radius: var(--r); padding: 14px 16px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); animation: wn-in 0.3s ease-out; }
+@keyframes wn-in { from { opacity: 0; transform: translateY(12px); } }
+.wn-card-title { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--accent-2); }
+.wn-card-head { font-size: 15px; font-weight: 600; margin: 4px 0 6px; }
+.wn-card-more { font-size: 12px; color: var(--faint); margin: 4px 0 0; }
+.wn-card-btns { display: flex; gap: 8px; margin-top: 12px; }
 .sw-big { height: 50px; border-radius: 8px; border: 1px solid #0008; margin: 8px 0; }
 .style-preview { background: #fff; color: #111; border-radius: 8px; padding: 10px; margin-top: 10px; min-height: 50px; overflow: hidden; }
 .newdoc { display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; }

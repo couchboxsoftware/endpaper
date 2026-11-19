@@ -1,54 +1,101 @@
 # Endpaper
 
-Print-ready designs and books, in CMYK. A Windows desktop app (Electron), built the same way as Couchbox.
+Print-ready designs and books, in CMYK: a Windows desktop app (Electron) from Couchbox Software, built to the Couchbox Software app standard as a **work** app.
 
-Start it with **Start Endpaper.cmd**, or `npm start`. Run this way it is the test version: it shows "Test version" in the title bar and keeps its own settings, so it runs alongside the installed Endpaper.
+## Install
+
+Download `Endpaper-Setup-x.y.z.exe` from the latest release on GitHub (couchboxsoftware/endpaper) and run it. It installs for you only, with a Start menu shortcut, and asks nothing.
+
+The installer isn't code-signed yet, so Windows SmartScreen warns the first time it's run. Click **More info**, then **Run anyway**. Some antivirus programs (Avast, for one) may also need an exception for the installer or for `%LOCALAPPDATA%\Programs\Endpaper`.
+
+To run it from this folder instead, double-click **Start Endpaper.cmd** (or `npm start`). Run this way it's the test version: it shows "Test version" in the title bar and keeps its own settings, so it runs alongside the installed Endpaper.
+
+## Updates
+
+The installed app checks GitHub Releases as soon as it opens, then every 6 hours. It can also check from **File, Settings, Updates and what's new** (Settings, App). When there's a new version, a banner in the bottom-right corner shows its headline with **Update now**, **Later** and **All release notes**.
+
+- Nothing downloads until you click Update now.
+- Nothing installs while the open design has unsaved changes. Endpaper asks you to save it first. If you say Not now, the update waits until you click Save and update.
+- After the update, Endpaper opens the design again on the page you were on, and a card in the bottom-left corner shows what's new, once.
+
+### Testing updates without publishing
+
+Serve a folder that holds a `latest.yml` and the installer at a localhost address, then start the app with `ENDPAPER_UPDATE_URL=http://localhost:PORT/` (only localhost is accepted). Add `ENDPAPER_UPDATE_DRY=1` to stop just before it installs. `test/update-check.js` does all of this for you.
+
+## Releasing a new version
+
+1. Add an entry at the top of `CHANGELOG.md`, following the template at the top of that file, like `## 0.1.6 · 19 Nov 2026`.
+2. Commit your changes.
+3. Run `npm run release -- 0.1.6`.
+
+This checks the changelog entry, that everything's committed, that the GitHub CLI is signed in (`gh auth login`, once) and that the version is new. Then it sets the version, copies the project to `%TEMP%\endpaper-build` and builds the installer there (the installer tool fails on long paths), and brings `Endpaper-Setup-0.1.6.exe`, its `.blockmap` and `latest.yml` back to `dist\`. Last, it commits, tags `v0.1.6`, pushes, and creates the GitHub release with those three files and the changelog entry as its notes.
+
+`npm run release -- 0.1.6 --dry-run` does the checks and the build without committing or publishing anything. To build the installer only, run `npm run dist`.
 
 ## What's where
 
-- `main.js`: the window, files, fonts, colour profiles, settings, brand kit, templates and bin, recovery.
-- `renderer/model.js`: the document: pages, masters, cover, swatches, styles. Everything is in mm.
+- `main.js`: the window, the splash hand-over, files, fonts, colour profiles, settings, brand kit, templates and bin, recovery, and the test hook (`ENDPAPER_TEST`).
+- `preload.js`: the only bridge between the page and the system (`window.ep`).
+- `src/main/updater.js`: checking, downloading and installing updates from GitHub Releases.
+- `renderer/index.html` + `renderer/styles.css`: the page and its look (dark only, Endpaper's tokens).
+- `renderer/app.js`: state, undo, files, export, Settings, the start screen and the menus.
+- `renderer/menubar.js`: the File, Edit, View… menu bar in the title bar (the menus themselves are in `renderer/app.js`).
+- `renderer/model.js`: the document: pages, masters (and page copies of master boxes), cover, swatches, styles. Everything is in mm.
 - `renderer/fonts.js`: fonts and text layout (wrapping, justification, threads), shared by screen and PDF.
 - `renderer/color.js`: LittleCMS colour management with the printing profile (Coated FOGRA39 by default).
 - `renderer/editor.js`: the canvas: drag, resize, rotate, snapping, text editing, photo cropping.
 - `renderer/panels.js`: Pages, Layers, Properties, Colours, Brand kit, Check.
+- `renderer/render.js`: drawing designs for thumbnails and image export.
 - `renderer/pdf.js` + `renderer/cmyk-jpeg.js`: PDF/X-4 export with CMYK photos, bleed and crop marks.
 - `renderer/preflight.js`: the print checks.
-- `renderer/brand.js`: the Endpaper logo and colours. `tools/render-icon.js` makes `build/icon.png`.
-- `CHANGELOG.md`: shown in What's new, the update banner and the GitHub release notes. Same writing rules as Couchbox.
-- `src/main/updater.js` + `renderer/updates.js`: updates from GitHub Releases.
-- `renderer/menubar.js`: the File, Edit, View… menu bar in the title bar (the menus themselves are in `renderer/app.js`).
-- `renderer/splash.html` + `renderer/splash.js`: the open-book splash screen.
+- `renderer/updates.js`: the update banner and the Updates part of Settings, App.
+- `renderer/whatsnew.js`: What's new in Settings, App, and the card after an update, with the coloured New, Improved and Fixed titles.
 - `renderer/hints.js`: every hint pop-up, in one list (Settings, Hints can show them again).
-- `tools/release.js`: builds the installer and publishes a release.
+- `renderer/util.js`: shared helpers: `$`, `esc`, toasts, windows, menus.
+- `renderer/brand.js`: the logo (the open book), the magenta and the wordmark. Everything else reads it.
+- `renderer/splash.html` + `renderer/splash.js`: the open-book splash screen.
+- `tools/release.js`: builds the installer in a short folder and publishes a release.
+- `tools/render-icon.js`: makes `build/icon.png` (512×512) and the icon check sheet `build/icon-preview.png` (not committed) from `renderer/brand.js`. Run `node_modules\electron\dist\electron.exe tools/render-icon.js`.
+- `tools/preview-splash.js`: shows the splash without starting the app and saves frames to `build/splash-preview-*.png` (not committed). Run `node_modules\electron\dist\electron.exe tools/preview-splash.js`.
+- `test/`: checks that drive the real app (see Tests).
+- `CHANGELOG.md`: every version, shown in What's new, the update banner and the GitHub release notes.
+- `dev-app-update.yml`: only for testing updates from this folder.
+- `Start Endpaper.cmd`: starts the test version with a double-click.
+- `LICENSE`: MIT.
 
-## Updates
+## Where data is kept
 
-The installed app checks GitHub Releases (couchboxsoftware/endpaper) when it starts and every 6 hours. It can also check from Settings, App, Check for updates. When there's a new version, a banner shows the release notes and an Update now button.
+Everything lives in `%APPDATA%\Endpaper`:
 
-- Nothing downloads until you click Update now.
-- Nothing installs while the open design has unsaved changes. Endpaper asks you to save it first. If you say Not now, the update waits until you click Save and update.
-- After the update, Endpaper opens the design again on the page you were on.
+- `settings.json`: settings, recent files, turned-off hints, and what to reopen after an update.
+- `brandkit.json`: your brand kit (colours, text styles, logos).
+- `templates\`: your templates. Deleted ones go to `bin\` and stay there for 30 days.
+- `recovery\`: copies of unsaved work, made every 20 seconds and offered back if Endpaper closes unexpectedly.
+- `fonts\` and `profiles\`: fonts and printing profiles you've added.
 
-## Releasing a new version
+Deleting that folder resets Endpaper. Your designs are `.endpaper` files, wherever you save them. The test version keeps its own copy in `%APPDATA%\Endpaper Test Version`.
 
-1. Add an entry at the top of `CHANGELOG.md`, like `## 0.1.1 · 20 Nov 2026`.
-2. Commit your changes.
-3. Run `npm run release -- 0.1.1`.
+## Tests
 
-This sets the version, builds `dist/Endpaper-Setup-0.1.1.exe`, tags `v0.1.1`, pushes, and creates the GitHub release. The release carries the installer, the blockmap and `latest.yml`, and uses the changelog entry as its notes. It needs Git and the GitHub CLI, signed in once with `gh auth login`. `npm run release -- 0.1.1 --dry-run` builds the release without publishing anything.
+The checks drive the real app. Each one makes a throwaway settings folder, starts Endpaper with `ENDPAPER_TEST` pointing at the check (and `ENDPAPER_TEST_USERDATA` at that folder), and prints PASS or FAIL for each thing it checks. They never touch your real settings or designs. Run them all with `npm test`, or one with `node test/startup-check.js`.
 
-To build the installer only, run `npm run dist`.
+- `startup-check.js`: the splash shows on its own, lights its four loading patches, stays at least 2.3 seconds and hands over to the main window; only one copy runs (a second one passes over to the first and quits); F11 switches full screen on and off; Ctrl+, opens Settings.
+- `update-check.js`: against a stand-in release on a local server, Endpaper checks as soon as it opens; the banner offers the update; Update now downloads it; with unsaved work it asks to save first, Not now waits, Save and update saves, remembers the design to reopen, and stops just before installing.
+- `whatsnew-check.js`: every CHANGELOG entry follows the template (and the check catches mistakes); Settings, App shows the newest three versions with "You have this" and New, Improved and Fixed in their colours and order; the card shows once after an update, not a second time, and not on a brand-new install.
+- `settings-check.js`: Settings has its five tabs, each holds its own settings, changes are saved straight away and kept after opening again, Settings reopens on the tab used last, and a new install opens maximised.
+- `close-check.js`: windows only close on a press and release outside them (dragging out of one keeps it open) and Esc closes the top one; with nothing unsaved Endpaper just closes; with unsaved work it asks first, Cancel keeps it open, and Don't save closes it.
 
-### Testing updates without publishing
-
-Serve a folder that holds a `latest.yml` and the installer at `http://localhost:8787/`. Then start the app with `EP_UPDATE_URL=http://localhost:8787/`. Add `EP_UPDATE_DRY=1` to stop just before it installs.
+`test/helper.js` is what they share, and `test/run-all.js` runs them in turn.
 
 ## Not done yet
 
 - File Explorer right-click. Double-clicking a .endpaper file opens it in the installed app.
-- The installer isn't code-signed, so Windows SmartScreen warns the first time it's run. Click More info, then Run anyway.
+- The installer isn't code-signed (see Install).
 - Mixed styles inside one paragraph (one bold word), hyphenation, spot (Pantone) colours, grouping, hardback covers.
 - Font collections (.ttc files, like Cambria) aren't listed.
 - Photos are treated as sRGB.
 - The PDF/X-4 files haven't been through a certified preflight (Acrobat or the printer's). Send a test file and get a proof first.
+
+## Licence
+
+MIT. Copyright (c) 2026 Couchbox Software. See `LICENSE`.

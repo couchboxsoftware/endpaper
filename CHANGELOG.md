@@ -19,6 +19,25 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.6 · 19 Nov 2026
+Endpaper now looks and behaves like the rest of the Couchbox Software family.
+
+### New
+- After an update, a card in the bottom-left corner shows what's new in that version, once, with a button to see every version.
+- What's new shows New, Improved and Fixed as coloured titles (green, blue and amber), with "You have this" on the version you're using (Settings, App).
+- Endpaper is free to use and share under the MIT licence.
+
+### Improved
+- Endpaper checks for an update as soon as it opens, instead of waiting a few seconds.
+- The endpaper name is drawn in the family style, with "paper" in magenta, on the start screen, the splash and in Settings.
+- The app icon is sharper on large screens and high-resolution displays.
+- New installs open maximised. If you've already chosen how Endpaper opens, that stays as it is (Settings, General).
+- The update banner always says whether your design will be saved first, even when it appears straight after Endpaper opens.
+- Settings opens on the tab you used last, also with Ctrl+, (File, Settings).
+
+### Fixed
+- The start screen says where Save as template is (File, Save as template).
+
 ## 0.1.5 · 19 Nov 2026
 Fill in a master's boxes page by page, and hints that explain how.
 

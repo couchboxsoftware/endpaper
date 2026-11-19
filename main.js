@@ -11,8 +11,8 @@ const VERSION = require('./package.json').version;
 const FILE_EXT = 'endpaper';
 const BIN_DAYS = 30;
 
-// Test mode (EP_TEST=path to a script): a separate settings folder, and the script drives the app.
-if (process.env.EP_TEST_USERDATA) app.setPath('userData', process.env.EP_TEST_USERDATA);
+// Test mode (ENDPAPER_TEST=path to a script): a separate settings folder, and the script drives the app.
+if (process.env.ENDPAPER_TEST_USERDATA) app.setPath('userData', process.env.ENDPAPER_TEST_USERDATA);
 // Running from the source folder (Start Endpaper.cmd) is the test version: it has its own
 // settings, so it runs alongside the installed Endpaper instead of handing over to it.
 else if (!app.isPackaged) app.setPath('userData', path.join(app.getPath('appData'), 'Endpaper Test Version'));
@@ -46,7 +46,7 @@ function writeJSON(file, data) {
 
 const DEFAULT_PROFILE = 'C:\\Windows\\System32\\spool\\drivers\\color\\CoatedFOGRA39.icc';
 const DEFAULTS = {
-  openMode: 'last', // window | maximised | fullscreen | last
+  openMode: 'maximised', // window | maximised | fullscreen | last. Work apps open maximised (standard, Part 2).
   bounds: null,
   maximized: false,
   units: 'mm',
@@ -145,11 +145,11 @@ function createWindow() {
     }
   });
   win.loadURL('app://endpaper/renderer/index.html');
-  if (process.env.EP_TEST) {
+  if (process.env.ENDPAPER_TEST) {
     win.webContents.on('console-message', (e) => console.log('[page]', e.message));
     win.webContents.once('did-finish-load', async () => {
       try {
-        await require(process.env.EP_TEST)({
+        await require(process.env.ENDPAPER_TEST)({
           win,
           exec: (js) => win.webContents.executeJavaScript(js, true),
           shot: async (file) => fs.writeFileSync(file, (await win.webContents.capturePage()).toPNG()),
@@ -171,6 +171,11 @@ function showMainWindow() {
   if (settings.openMode === 'fullscreen') win.setFullScreen(true);
   win.show();
   win.focus();
+  // Check for an update as soon as the window is up, then every 6 hours (src/main/updater.js).
+  if (updater && !updaterStarted) {
+    updaterStarted = true;
+    updater.start();
+  }
 }
 
 /* ---------- splash ---------- */
@@ -265,13 +270,14 @@ app.whenReady().then(() => {
     return net.fetch(pathToFileURL(file).toString());
   });
   purgeBin();
-  if (!process.env.EP_TEST || process.env.EP_TEST_SPLASH) createSplash();
+  if (!process.env.ENDPAPER_TEST || process.env.ENDPAPER_TEST_SPLASH) createSplash();
   createWindow();
   startUpdater();
 });
 
 /* ---------- updates ---------- */
 let updater = null;
+let updaterStarted = false;
 let prepareWaiter = null;
 function startUpdater() {
   const send = (ch, data) => win && !win.isDestroyed() && win.webContents.send(ch, data);
@@ -293,7 +299,6 @@ function startUpdater() {
       forceClose = true;
     },
   });
-  win.webContents.once('did-finish-load', () => updater.start());
 }
 ipcMain.handle('update:state', () => (updater ? updater.getState() : { status: 'off' }));
 ipcMain.handle('update:check', () => updater && updater.check(true));
@@ -314,14 +319,20 @@ handle('app:info', () => {
   const version = VERSION;
   const updated = !!settings.lastSeenVersion && settings.lastSeenVersion !== version;
   const firstRun = !settings.lastSeenVersion;
-  settings.lastSeenVersion = version;
+  // After an update the What's new card shows once: lastSeenVersion only moves on when it's
+  // closed (changelog:seen). A brand-new install doesn't get the card.
+  if (!updated) settings.lastSeenVersion = version;
   // After an update, open what was open before; otherwise a file double-clicked in Explorer.
   const reopen = (settings.reopen || []).filter((f) => f && f.path && fs.existsSync(f.path));
   settings.reopen = [];
   saveSettings();
   const f = pendingOpen;
   pendingOpen = null;
-  return { version, updated, firstRun, openFile: f, reopen, userData: app.getPath('userData'), testVersion: !app.isPackaged };
+  return { version, updated, whatsNew: updated ? version : null, firstRun, openFile: f, reopen, userData: app.getPath('userData'), testVersion: !app.isPackaged };
+});
+handle('changelog:seen', () => {
+  settings.lastSeenVersion = VERSION;
+  saveSettings();
 });
 handle('app:full-screen', () => win && win.setFullScreen(!win.isFullScreen()));
 handle('app:quit', () => win && win.close());

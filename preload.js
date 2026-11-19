@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const call = (ch) => (...a) => ipcRenderer.invoke(ch, ...a);
 const channels = [
-  'app:info', 'app:close-ack', 'app:close-ok', 'app:confirm', 'app:reveal', 'app:readAppFile', 'app:boot', 'app:full-screen', 'app:quit',
+  'app:info', 'changelog:seen', 'app:close-ack', 'app:close-ok', 'app:confirm', 'app:reveal', 'app:readAppFile', 'app:boot', 'app:full-screen', 'app:quit',
   'settings:get', 'settings:set', 'changelog:get',
   'file:open', 'file:read', 'file:save', 'file:export', 'file:exportMany', 'recent:list', 'recent:forget',
   'image:pick', 'fonts:list', 'fonts:read', 'fonts:add',
