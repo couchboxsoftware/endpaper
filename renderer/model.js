@@ -129,11 +129,66 @@ const Model = (() => {
     return { top: m.top, bottom: m.bottom, left: m.inside, right: m.outside };
   }
   const master = (doc, id) => doc.masters.find((m) => m.id === id) || null;
+  // The master's boxes that show on a page: not the ones the page has its own copy of.
   function masterItems(doc, idx) {
     const p = doc.pages[idx];
     const m = p && !p.hideMaster && master(doc, p.master);
     if (!m) return [];
-    return side(doc, idx) === 'left' ? m.left : m.right;
+    const list = side(doc, idx) === 'left' ? m.left : m.right;
+    const own = new Set(p.items.filter((it) => it.masterRef).map((it) => it.masterRef));
+    return own.size ? list.filter((it) => !own.has(it.id)) : list;
+  }
+  // All the master's boxes for a page, whether or not the page has overridden them.
+  function masterSource(doc, idx) {
+    const p = doc.pages[idx];
+    const m = p && master(doc, p.master);
+    return m ? (side(doc, idx) === 'left' ? m.left : m.right) : [];
+  }
+
+  /* ---------- master overrides (InDesign's "override master item") ----------
+     A page can have its own copy of a master box (Ctrl+Shift+click it on the page). The copy
+     stays linked: anything you haven't changed on the page (say its position) follows the
+     master, and what you have changed (say its text) is the page's own. base holds the master's
+     values the copy last saw, so a value still equal to base hasn't been changed on the page. */
+  const NOT_LINKED = new Set(['id', 'masterRef', 'base', 'next']);
+  const linkedValues = (mi) => {
+    const out = {};
+    for (const k of Object.keys(mi)) if (!NOT_LINKED.has(k)) out[k] = clone(mi[k]);
+    return out;
+  };
+  function overrideMasterItem(doc, idx, masterId) {
+    const mi = masterSource(doc, idx).find((it) => it.id === masterId);
+    if (!mi) return null;
+    const existing = doc.pages[idx].items.find((it) => it.masterRef === masterId);
+    if (existing) return existing;
+    const copy = { ...linkedValues(mi), id: uid('i'), next: null, masterRef: masterId, base: linkedValues(mi) };
+    doc.pages[idx].items.unshift(copy); // under the page's own boxes, like the master was
+    return copy;
+  }
+  // Brings page copies up to date with their master boxes. Run after every change.
+  function syncOverrides(doc) {
+    doc.pages.forEach((p, idx) => {
+      for (const it of p.items) {
+        if (!it.masterRef) continue;
+        const mi = masterSource(doc, idx).find((x) => x.id === it.masterRef);
+        if (!mi) {
+          // The master box is gone (or the page uses another master): keep the copy as the page's own.
+          delete it.masterRef;
+          delete it.base;
+          continue;
+        }
+        const now = linkedValues(mi);
+        const base = it.base || {};
+        for (const k of new Set([...Object.keys(now), ...Object.keys(base)])) {
+          if (NOT_LINKED.has(k)) continue;
+          if (JSON.stringify(it[k]) === JSON.stringify(base[k]) && JSON.stringify(it[k]) !== JSON.stringify(now[k])) {
+            if (now[k] === undefined) delete it[k];
+            else it[k] = clone(now[k]);
+          }
+        }
+        it.base = now;
+      }
+    });
   }
 
   /* ---------- cover ---------- */
@@ -358,7 +413,7 @@ const Model = (() => {
 
   return {
     PRESETS, PAPERS, DEFAULT_FONT, textStyle, newDoc, newPage, newItem, itemLabel, typeName, addPageNumbers,
-    spreads, side, pageNumber, margins, master, masterItems, cover, coverPages, isInside, coverSurfaces, surfaceName, isSingle, isCoverPage, surfaceOrigin, coverSurfaceFor, onSurface,
+    spreads, side, pageNumber, margins, master, masterItems, masterSource, overrideMasterItem, syncOverrides, cover, coverPages, isInside, coverSurfaces, surfaceName, isSingle, isCoverPage, surfaceOrigin, coverSurfaceFor, onSurface,
     surfaceItems, surfaceSize, surfaceSide, sameSurface, allSurfaces, printedSurfaces, findItem,
     resolveColor, colorName, ink, styleOf, applyStyle, chainOf, usedAssets, pruneAssets, normalise,
   };

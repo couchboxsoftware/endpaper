@@ -61,6 +61,7 @@ const DEFAULTS = {
   lastSeenVersion: null,
   recent: [],
   reopen: [], // designs to open again after an update: [{ path, surface }]
+  hintsOff: {}, // hint pop-ups turned off with "Don't show this again": { id: when } (renderer/hints.js)
 };
 let settings = { ...DEFAULTS, ...readJSON(user('settings.json'), {}) };
 const saveSettings = () => writeJSON(user('settings.json'), settings);

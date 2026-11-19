@@ -89,6 +89,8 @@ const App = (() => {
     if (!history.commit(label, opts)) afterChange(opts);
   }
   function afterChange(opts = {}) {
+    // Page copies of master boxes follow the master for anything not changed on the page.
+    Model.syncOverrides(S.doc);
     Layout.invalidate();
     if (opts.thumbs === 'all' || S.surface.kind === 'master' || opts.thumbsShared) Panels.invalidateThumbs();
     else for (const s of Editor.spreadSurfaces(S.doc, S.surface)) Panels.invalidateThumbs(s);
@@ -156,6 +158,28 @@ const App = (() => {
     S.tool = t;
     Editor.stage && Editor.stage.classList.toggle('drawing', t !== 'select');
     updateToolbar();
+  }
+
+  /* ================= master overrides ================= */
+  // Ctrl+Shift+click a master box on a page: the page gets its own copy to change.
+  function overrideMaster(idx, masterId) {
+    let copy;
+    change('Edit master item on this page', () => {
+      copy = Model.overrideMasterItem(S.doc, idx, masterId);
+      if (copy) S.sel = new Set([copy.id]);
+    }, { thumbs: 'all' });
+    if (!copy) return;
+    status(`Page ${Model.pageNumber(S.doc, idx)} has its own copy now. Right-click it and choose Reset to master to undo.`);
+    if (copy.type === 'text') setTimeout(() => Text.edit(copy), 30);
+  }
+  // Back to the master's version: the page's copy goes, and the master box shows again.
+  function resetToMaster(items) {
+    const ids = new Set(items.filter((it) => it.masterRef).map((it) => it.id));
+    if (!ids.size) return;
+    change('Reset to master', () => {
+      for (const p of S.doc.pages) p.items = p.items.filter((it) => !ids.has(it.id));
+      S.sel = new Set();
+    }, { thumbs: 'all' });
   }
 
   /* ================= adding things ================= */
@@ -808,7 +832,7 @@ const App = (() => {
       title: 'Settings',
       wide: true,
       cls: 'settings',
-      body: `<div class="tabs" data-stabs>${[['general', 'General'], ['colour', 'Colour'], ['export', 'Export'], ['app', 'App']].map(([k, l]) => `<button data-t="${k}" class="${k === tab ? 'on' : ''}">${l}</button>`).join('')}</div>
+      body: `<div class="tabs" data-stabs>${[['general', 'General'], ['colour', 'Colour'], ['export', 'Export'], ['hints', 'Hints'], ['app', 'App']].map(([k, l]) => `<button data-t="${k}" class="${k === tab ? 'on' : ''}">${l}</button>`).join('')}</div>
         <div class="stab" data-tab="general">
           <div class="field field-wide"><span>Units</span><div class="seg" data-sset="units">${Units.list.map((u) => `<button data-v="${u}" class="${set.units === u ? 'on' : ''}">${u}</button>`).join('')}</div></div>
           <div class="grid2"><label class="field"><span>New bleed</span><input class="input" data-sn="bleed" value="${set.bleed ?? 3}"><em>mm</em></label></div>
@@ -827,6 +851,7 @@ const App = (() => {
           <div class="grid2"><label class="field"><span>Photo quality</span><input class="input" data-sn="imageQuality" value="${set.imageQuality || 92}"><em>of 100</em></label></div>
           <p class="hint">Photos sharper than 450 ppi are reduced to 300 ppi to keep files a sensible size.</p>
         </div>
+        <div class="stab" data-tab="hints"><div class="hints-section">${Hints.settingsHtml()}</div></div>
         <div class="stab" data-tab="app">
           <p>${BRAND.wordmark} <span class="muted">version ${esc(S.version)}</span></p>
           <div class="up-section">${Updates.settingsHtml()}</div>
@@ -847,6 +872,12 @@ const App = (() => {
       if (sb) {
         $$('button', sb.parentElement).forEach((x) => x.classList.toggle('on', x === sb));
         return applySetting({ [sb.parentElement.dataset.sset]: sb.dataset.v });
+      }
+      const hr = e.target.closest('[data-hint-reset]');
+      if (hr || e.target.closest('[data-hints-reset-all]')) {
+        await (hr ? Hints.reset(hr.dataset.hintReset) : Hints.resetAll());
+        $('.hints-section', m.el).innerHTML = Hints.settingsHtml();
+        return toast(hr ? 'That hint will show again.' : 'All hints will show again.');
       }
       if (e.target.closest('[data-act="add-profile"]')) {
         const r = await ep.icc.add();
@@ -887,7 +918,7 @@ const App = (() => {
     document.title = 'Endpaper';
     const [recent, templates, recovery] = await Promise.all([ep.recent.list(), ep.templates.list(), ep.recovery.list()]);
     $('#home').innerHTML = `<div class="home">
-      <header class="home-head"><div class="brand big">${BRAND.icon}${BRAND.wordmark}</div><button class="icon-btn" data-h="settings" title="Settings">⚙</button></header>
+      <header class="home-head"><div class="brand big">${BRAND.icon}${BRAND.wordmark}</div></header>
       ${recovery.length ? `<section class="recover"><h3>Recover unsaved work</h3><p class="muted">Endpaper closed before these were saved.</p>${recovery.map((r) => `<div class="rec-row"><b>${esc(r.name)}</b><span class="muted">${timeAgo(r.saved)}</span><button class="btn btn-sm btn-accent" data-rec="${r.id}">Open it</button><button class="btn btn-sm btn-ghost" data-recdel="${r.id}">Discard</button></div>`).join('')}</section>` : ''}
       <section class="home-new">
         <button class="big-btn" data-h="new-print"><span class="bb-icon">▭</span><b>New design</b><span>Flyers, posters, cards and other print</span></button>
@@ -1171,7 +1202,7 @@ const App = (() => {
     }
     if (ctrl && k.toLowerCase() === 'o') return e.preventDefault(), openFile();
     if (ctrl && k.toLowerCase() === 'n') return e.preventDefault(), newDialog('print');
-    if (ctrl && k === ',') return e.preventDefault(), openSettings();
+    if (ctrl && k === ',') return e.preventDefault(), openSettings('general');
     if ($('.modal-overlay')) return;
     if (!S.doc || isTyping()) return;
     if (ctrl && k.toLowerCase() === 'e') return e.preventDefault(), openExport();
@@ -1290,7 +1321,16 @@ const App = (() => {
           { label: '&Export…', key: 'Ctrl+E', disabled: noDoc, run: () => openExport() },
           { label: 'Show in &folder', disabled: !S.filePath, run: () => ep.app.reveal(S.filePath) },
           '-',
-          { label: 'Se&ttings…', key: 'Ctrl+,', run: () => openSettings() },
+          {
+            label: 'Se&ttings',
+            items: [
+              { label: '&General…', key: 'Ctrl+,', run: () => openSettings('general') },
+              { label: '&Colour and printing profile…', run: () => openSettings('colour') },
+              { label: '&Export…', run: () => openSettings('export') },
+              { label: '&Hints…', run: () => openSettings('hints') },
+              { label: "&Updates and what's new…", run: () => openSettings('app') },
+            ],
+          },
           '-',
           { label: '&Close design', key: 'Ctrl+W', disabled: noDoc, run: () => closeDoc() },
           { label: 'E&xit', key: 'Alt+F4', run: () => ep.app.quit() },
@@ -1328,6 +1368,7 @@ const App = (() => {
             ],
           },
           { label: 'Bleed and margin &guides', key: 'Ctrl+;', checked: S.settings.showGuides !== false, run: () => applySetting({ showGuides: S.settings.showGuides === false }) },
+          { label: 'S&nap to edges and boxes', checked: S.settings.snap !== false, run: () => applySetting({ snap: S.settings.snap === false }) },
           '-',
           { label: 'Full &screen', key: 'F11', checked: document.body.classList.contains('is-fullscreen'), run: () => ep.app.fullScreen() },
         ],
@@ -1418,6 +1459,7 @@ const App = (() => {
           { label: "&What's new", run: () => showWhatsNew() },
           { label: '&Check for updates', run: () => openSettings('app') },
           { label: '&Release notes on GitHub', run: () => ep.update.releases() },
+          { label: 'Show all &hints again', run: async () => { await Hints.resetAll(); toast('All hints will show again.'); } },
           '-',
           { label: '&About Endpaper', run: about },
         ],
@@ -1460,7 +1502,7 @@ const App = (() => {
   return {
     S, unit, history, change, render, markDirty, select, selectionChanged, goTo, setTool,
     addItem, pickPhotoFor, setPhoto, placePhotos, startCrop, endCrop, cmd, align, pageOp,
-    kit, status, zoomChanged, init, openExport, save, newDocument, loadDoc, setCoverLayout,
+    kit, status, zoomChanged, init, openExport, save, newDocument, loadDoc, setCoverLayout, overrideMaster, resetToMaster,
   };
 })();
 

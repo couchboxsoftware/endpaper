@@ -116,7 +116,7 @@ body.linking #stage { cursor: alias; }
 .page-origin { position: absolute; width: 0; height: 0; }
 .item { position: absolute; transform-origin: 50% 50%; cursor: move; }
 .item.locked, .item.from-master { cursor: default; }
-.item.from-master { pointer-events: none; }
+/* Master boxes on a page are clickable (Ctrl+Shift+click to edit on that page), but locked. */
 .item svg { position: absolute; left: 0; top: 0; overflow: visible; display: block; }
 .item svg.txt text { white-space: pre; font-kerning: normal; }
 .item-image { overflow: hidden; }
@@ -358,3 +358,14 @@ body.alt-keys #menubar u, body.alt-keys .mb-drop u { text-decoration: underline;
 body:fullscreen .mb-controls-space, body.is-fullscreen .mb-controls-space { width: 0; }
 .mb-test { display: none; flex: none; margin-right: 10px; padding: 2px 8px; border-radius: 999px; background: var(--warn); color: #1a1400; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; }
 body.test-version .mb-test { display: inline-block; }
+
+/* ---------- hint pop-ups and the Hints list in Settings ---------- */
+.modal.hint-pop { max-width: 440px; }
+.hint-actions { justify-content: space-between; align-items: center; }
+.hint-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 12px; }
+.hint-row { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; padding: 8px 10px; background: var(--panel-2); border-radius: 8px; }
+.hint-row > div { display: flex; flex-direction: column; gap: 2px; }
+.hint-row .muted { font-size: 12px; }
+/* Empty text boxes show where they are (screen only): placeholders on masters show on pages too. */
+.item.item-text.is-empty { outline: 1px dashed rgba(139, 92, 255, 0.55); outline-offset: -1px; }
+.item.from-master.is-empty { outline-color: rgba(139, 92, 255, 0.4); background: rgba(139, 92, 255, 0.04); }

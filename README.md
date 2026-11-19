@@ -19,6 +19,7 @@ Start it with **Start Endpaper.cmd**, or `npm start`. Run this way it is the tes
 - `src/main/updater.js` + `renderer/updates.js`: updates from GitHub Releases.
 - `renderer/menubar.js`: the File, Edit, View… menu bar in the title bar (the menus themselves are in `renderer/app.js`).
 - `renderer/splash.html` + `renderer/splash.js`: the open-book splash screen.
+- `renderer/hints.js`: every hint pop-up, in one list (Settings, Hints can show them again).
 - `tools/release.js`: builds the installer and publishes a release.
 
 ## Updates

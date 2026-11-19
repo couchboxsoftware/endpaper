@@ -93,6 +93,8 @@ const Editor = (() => {
     const keep = new Set();
     const pagesHost = $('#pages-host', board);
     pagesHost.innerHTML = '';
+    const fed = new Set(); // boxes that text continues into aren't empty
+    for (const s of Model.allSurfaces(doc)) for (const x of Model.surfaceItems(doc, s)) if (x.next) fed.add(x.next);
     for (const g of geo) {
       const pageEl = document.createElement('div');
       pageEl.className = 'page' + (Model.sameSurface(g.surface, S().surface) ? ' current' : '');
@@ -111,7 +113,9 @@ const Editor = (() => {
           el.dataset.id = it.id;
           els.set(key, el);
         }
-        el.className = `item item-${it.type}${master ? ' from-master' : ''}${it.locked ? ' locked' : ''}`;
+        // Empty text boxes (placeholders, often on a master) get a faint outline on screen only.
+        const empty = it.type === 'text' && !(it.text || '').trim() && !fed.has(it.id);
+        el.className = `item item-${it.type}${master ? ' from-master' : ''}${it.locked ? ' locked' : ''}${empty ? ' is-empty' : ''}`;
         el.dataset.master = master ? '1' : '';
         paint(el, it, pc, k);
         if (S().editing && S().editing.id === it.id && !master) el.style.visibility = 'hidden';
@@ -153,7 +157,7 @@ const Editor = (() => {
       const st = L.style || Model.styleOf(doc, it);
       const f = L.font;
       const col = Color.css(Model.resolveColor(doc, st.color) || { c: 0, m: 0, y: 0, k: 100 });
-      sig = ['t', f && f.cssName, L.size, col, st.tracking, W, H, k, JSON.stringify(L.lines)].join('|');
+      sig = ['t', f && f.cssName, L.size, col, st.tracking, W, H, k, JSON.stringify(L.lines), el.dataset.master].join('|');
       if (f) {
         const ls = ((st.tracking || 0) / 1000) * L.size * k;
         const parts = [];
@@ -163,7 +167,8 @@ const Editor = (() => {
         }
         html = `<svg class="txt" width="${W}" height="${H}" style="font-family:'${f.cssName}';font-size:${L.size * k}px;letter-spacing:${ls}px;fill:${col}">${parts.join('')}</svg>`;
       } else html = '';
-      if (!it.text && !L.lines.some((l) => l.text)) html += `<div class="txt-empty">Double-click to type</div>`;
+      // An empty master box on a page is filled in with Ctrl+Shift+click, not a double-click.
+      if (!it.text && !L.lines.some((l) => l.text)) html += `<div class="txt-empty">${el.dataset.master ? 'Ctrl+Shift+click to fill in' : 'Double-click to type'}</div>`;
     } else {
       const fill = Model.resolveColor(doc, it.fill);
       const stroke = Model.resolveColor(doc, it.stroke);
@@ -372,6 +377,24 @@ const Editor = (() => {
     const h = e.target.closest('.h');
     const itemEl = e.target.closest('.item');
     const selEl = e.target.closest('.sel');
+
+    // A box from the master, on a page: locked, like InDesign. Ctrl+Shift+click gives this page
+    // its own copy to change; a double-click explains that.
+    if (itemEl && itemEl.dataset.master && !h && S().tool === 'select' && g && g.surface.kind === 'page') {
+      if (e.ctrlKey && e.shiftKey) {
+        e.preventDefault();
+        lastPress = null;
+        return App.overrideMaster(g.surface.idx, itemEl.dataset.id);
+      }
+      const now = performance.now();
+      const mid = 'm:' + itemEl.dataset.id;
+      const again = lastPress && lastPress.id === mid && now - lastPress.t < DOUBLE_MS && Math.hypot(p.x - lastPress.x, p.y - lastPress.y) < 6;
+      lastPress = again ? null : { id: mid, t: now, x: p.x, y: p.y };
+      if (again) {
+        e.preventDefault();
+        return Hints.show('master-override');
+      }
+    }
 
     if (S().linkFrom) {
       const id = itemEl && !itemEl.dataset.master ? itemEl.dataset.id : null;
@@ -652,11 +675,19 @@ const Editor = (() => {
   function onContext(e) {
     e.preventDefault();
     const el = e.target.closest('.item, .sel');
+    // Right-click on a master box on a page: offer to edit it on this page only.
+    if (el && el.dataset.master) {
+      const g = geoAt(boardPoint(e));
+      if (g && g.surface.kind === 'page')
+        return contextMenu(e.clientX, e.clientY, [{ label: 'Edit on this page only', key: 'Ctrl+Shift+click', run: () => App.overrideMaster(g.surface.idx, el.dataset.id) }]);
+    }
     const id = el && !el.dataset.master ? el.dataset.id : null;
     if (id && !S().sel.has(id)) App.select([id]);
     const has = S().sel.size > 0;
     const one = selectedItems()[0];
+    const fromMaster = selectedItems().filter((x) => x.masterRef);
     contextMenu(e.clientX, e.clientY, [
+      ...(fromMaster.length ? [{ label: 'Reset to master', run: () => App.resetToMaster(fromMaster) }, '-'] : []),
       { label: 'Cut', key: 'Ctrl+X', disabled: !has, run: () => App.cmd('cut') },
       { label: 'Copy', key: 'Ctrl+C', disabled: !has, run: () => App.cmd('copy') },
       { label: 'Paste', key: 'Ctrl+V', run: () => App.cmd('paste') },

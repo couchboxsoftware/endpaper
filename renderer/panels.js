@@ -353,6 +353,11 @@ const Panels = (() => {
     const { doc } = S();
     let h = `<section><h5>${esc(Model.typeName[it.type])}${it.locked ? ' <span class="tag">Locked</span>' : ''}</h5>
       <div class="grid2">${len('X', 'x', it.x)}${len('Y', 'y', it.y)}${len('W', 'w', it.w)}${it.type === 'line' ? '' : len('H', 'h', it.h)}${num('Rotate', 'rot', it.rot || 0, '°')}${num('Opacity', 'opacity', Math.round((it.opacity ?? 1) * 100), '%')}</div></section>`;
+    if (it.masterRef) {
+      const p = S().surface.kind === 'page' && doc.pages[S().surface.idx];
+      const ms = p && Model.master(doc, p.master);
+      h += `<section><h5>From the master</h5><p class="hint">This page's own copy of a box on ${esc(ms ? ms.name : 'its master')}. What you change here is just for this page; anything you leave alone (like where it sits) still follows the master.</p><div class="btn-row"><button class="btn btn-sm" data-act="reset-master">Reset to master</button></div></section>`;
+    }
     if (it.type === 'text') h += textSection([it]);
     if (it.type === 'image') {
       const a = doc.assets[it.asset];
@@ -612,6 +617,7 @@ const Panels = (() => {
       if (a === 'story') return Story.open(it);
       if (a === 'link') return startLink(it);
       if (a === 'unlink') return App.change('Stop continuing', () => (it.next = null));
+      if (a === 'reset-master') return App.resetToMaster(Editor.selectedItems());
       if (a === 'reset-style') return App.change('Reset to style', () => { for (const x of Editor.selectedItems()) if (x.type === 'text' && x.styleId) Model.applyStyle(doc, x, doc.styles.find((s) => s.id === x.styleId)); });
       if (a === 'style-from') return newStyleFrom(it);
       if (a === 'replace-photo') return App.pickPhotoFor(it);

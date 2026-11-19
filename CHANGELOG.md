@@ -19,6 +19,20 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.5 · 19 Nov 2026
+Fill in a master's boxes page by page, and hints that explain how.
+
+### New
+- Hold Ctrl and Shift and click a box from the master to change it on that page only. Other pages keep the master's version, and anything you leave alone on the page (like where the box sits) still follows the master.
+- Right-click a page's copy and choose Reset to master to go back to the master's version.
+- Empty text boxes show a faint outline on screen, so placeholders on a master can be seen on its pages.
+- Hint pop-ups explain things the first time you need them, starting with editing master boxes. Tick "Don't show this again" to stop one.
+- Settings, Hints lists every hint, so you can show one again or all of them (also Help, Show all hints again).
+- File, Settings opens each part of Settings directly, and View, Snap to edges and boxes switches snapping on and off.
+
+### Improved
+- The gear buttons are gone: everything they opened is in the menus.
+
 ## 0.1.4 · 19 Nov 2026
 Every text box has its own settings.
 
