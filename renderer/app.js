@@ -436,10 +436,8 @@ const App = (() => {
       change('Brand colour', () => {
         if (!sw) S.doc.swatches.push((sw = { id: uid('sw'), ...s }));
         for (const it of selectedList()) {
-          if (it.type === 'text') {
-            const shared = it.styleId && S.doc.styles.find((x) => x.id === it.styleId);
-            (shared || it.style).color = { sw: sw.id };
-          } else if (it.type === 'line') it.stroke = { sw: sw.id };
+          if (it.type === 'text') Model.styleOf(S.doc, it).color = { sw: sw.id };
+          else if (it.type === 'line') it.stroke = { sw: sw.id };
           else if (it.type !== 'image') it.fill = { sw: sw.id };
         }
       });
@@ -451,7 +449,7 @@ const App = (() => {
           let st = S.doc.styles.find((x) => x.name === s.name);
           if (st) Object.assign(st, clone(s));
           else S.doc.styles.push((st = { ...clone(s), id: uid('st') }));
-          for (const it of selectedList()) if (it.type === 'text') (it.styleId = st.id), (it.styleOverride = null);
+          for (const it of selectedList()) if (it.type === 'text') Model.applyStyle(S.doc, it, st);
           toast(`“${s.name}” is in this document's text styles.`);
         })
       );
@@ -1239,8 +1237,7 @@ const App = (() => {
     if (!items.length) return;
     change('Align text', () => {
       for (const it of items) {
-        if (it.styleId && S.doc.styles.some((s) => s.id === it.styleId)) it.styleOverride = { ...(it.styleOverride || {}), align: a };
-        else it.style = { ...Model.styleOf(S.doc, it), align: a };
+        Model.styleOf(S.doc, it).align = a;
       }
     });
   }

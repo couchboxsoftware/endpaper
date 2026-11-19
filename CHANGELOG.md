@@ -19,6 +19,18 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.4 · 19 Nov 2026
+Every text box has its own settings.
+
+### Improved
+- Font, size, spacing, colour and alignment in Properties change only the text boxes you've selected. Other boxes, and the text style they started from, stay as they are.
+- Select several text boxes to change them together. Settings they share show in Properties; ones that differ are left blank, and anything you set goes to all of them.
+- Text styles are starting points: pick one in Properties (or click it in Colours) to give the selected text its settings, and Reset to style puts a box back.
+- Editing a text style asks whether to update the boxes that use it.
+
+### Fixed
+- Vertical alignment (top, middle, bottom) no longer changes every box with the same text style.
+
 ## 0.1.3 · 19 Nov 2026
 Double-click a text box to type in it again.
 

@@ -78,6 +78,7 @@ const Model = (() => {
       assets: {},
       cover: { enabled: book, paper: 'kdp-white', perPage: 0.0572, spineExtra: 0, bleed: 3, items: [], inside: { enabled: false, items: [] }, layout: 'spread', order: 'outside-first' },
       created: Date.now(),
+      ownTextSettings: true,
     };
     for (let i = 0; i < Math.max(1, pages); i++) doc.pages.push(newPage(doc));
     if (book) addPageNumbers(doc);
@@ -90,7 +91,7 @@ const Model = (() => {
     const ma = doc.masters[0];
     const y = doc.h - doc.margins.bottom + 6;
     const w = 20;
-    const mk = (x, align) => ({ ...base('text', x, y, w, 6), name: 'Page number', text: '{page}', styleId: 'st-folio', styleOverride: { align }, style: { ...doc.styles.find((s) => s.id === 'st-folio'), align }, next: null });
+    const mk = (x, align) => ({ ...base('text', x, y, w, 6), name: 'Page number', text: '{page}', styleId: 'st-folio', style: { ...ownCopy(doc.styles.find((s) => s.id === 'st-folio') || textStyle()), align }, next: null });
     ma.left = [mk(doc.margins.outside, 'left')];
     ma.right = [mk(doc.w - doc.margins.outside - w, 'right')];
   }
@@ -262,8 +263,23 @@ const Model = (() => {
   /* ---------- text styles ---------- */
   // A text box uses its style (the shared one, when it's linked) with its own alignment.
   function styleOf(doc, it) {
+    // Every text box has its own settings (it.style). styleId only says which style they came
+    // from; changing the box never changes the style or other boxes.
+    if (it.style) return it.style;
     const shared = it.styleId && doc.styles.find((s) => s.id === it.styleId);
-    return shared ? { ...shared, ...(it.styleOverride || {}) } : it.style;
+    return (it.style = shared ? ownCopy(shared) : textStyle());
+  }
+  // A style's settings, without its id and name, for a box to keep as its own.
+  function ownCopy(st) {
+    const { id, name, ...rest } = clone(st);
+    return rest;
+  }
+  // Gives a box a style's settings (or keeps its own with st = null: "No style").
+  function applyStyle(doc, it, st) {
+    if (st) it.style = ownCopy(st);
+    else it.style = styleOf(doc, it);
+    it.styleId = st ? st.id : null;
+    it.styleOverride = null;
   }
 
   /* ---------- threads (text that continues in another box) ---------- */
@@ -324,6 +340,19 @@ const Model = (() => {
     doc.assets = doc.assets || {};
     doc.dpi = doc.dpi || 300;
     doc.pageStart = doc.pageStart || 1;
+    // Files from before 0.1.4 linked boxes to their style. Give each box its own copy of exactly
+    // what it showed, once.
+    if (!doc.ownTextSettings) {
+      for (const s of allSurfaces(doc))
+        for (const it of surfaceItems(doc, s)) {
+          if (it.type !== 'text') continue;
+          const shared = it.styleId && doc.styles.find((x) => x.id === it.styleId);
+          if (shared) it.style = { ...ownCopy(shared), ...(it.styleOverride || {}) };
+          else if (!it.style) it.style = textStyle();
+          it.styleOverride = null;
+        }
+      doc.ownTextSettings = true;
+    }
     return doc;
   }
 
@@ -331,6 +360,6 @@ const Model = (() => {
     PRESETS, PAPERS, DEFAULT_FONT, textStyle, newDoc, newPage, newItem, itemLabel, typeName, addPageNumbers,
     spreads, side, pageNumber, margins, master, masterItems, cover, coverPages, isInside, coverSurfaces, surfaceName, isSingle, isCoverPage, surfaceOrigin, coverSurfaceFor, onSurface,
     surfaceItems, surfaceSize, surfaceSide, sameSurface, allSurfaces, printedSurfaces, findItem,
-    resolveColor, colorName, ink, styleOf, chainOf, usedAssets, pruneAssets, normalise,
+    resolveColor, colorName, ink, styleOf, applyStyle, chainOf, usedAssets, pruneAssets, normalise,
   };
 })();

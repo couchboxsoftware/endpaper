@@ -315,7 +315,7 @@ const Panels = (() => {
     const info = Fonts.info(path);
     const fam = info ? info.family : null;
     const styles = fam ? fams.find(([f]) => f === fam)?.[1] || [] : [];
-    return `<div class="field field-wide"><span>Font</span><select class="input" data-font="family">${!info ? `<option selected>Missing font</option>` : ''}${fams.map(([f]) => `<option ${f === fam ? 'selected' : ''}>${esc(f)}</option>`).join('')}</select></div>
+    return `<div class="field field-wide"><span>Font</span><select class="input" data-font="family">${!info ? `<option selected>${path === '' ? 'Mixed' : 'Missing font'}</option>` : ''}${fams.map(([f]) => `<option ${f === fam ? 'selected' : ''}>${esc(f)}</option>`).join('')}</select></div>
       <div class="field field-wide"><span>Style</span><select class="input" data-font="style">${styles.map((s) => `<option value="${esc(s.path)}" ${s.path.toLowerCase() === (path || '').toLowerCase() ? 'selected' : ''}>${esc(s.style)}</option>`).join('')}</select></div>`;
   }
 
@@ -353,21 +353,7 @@ const Panels = (() => {
     const { doc } = S();
     let h = `<section><h5>${esc(Model.typeName[it.type])}${it.locked ? ' <span class="tag">Locked</span>' : ''}</h5>
       <div class="grid2">${len('X', 'x', it.x)}${len('Y', 'y', it.y)}${len('W', 'w', it.w)}${it.type === 'line' ? '' : len('H', 'h', it.h)}${num('Rotate', 'rot', it.rot || 0, '°')}${num('Opacity', 'opacity', Math.round((it.opacity ?? 1) * 100), '%')}</div></section>`;
-    if (it.type === 'text') {
-      const st = Model.styleOf(doc, it);
-      const shared = it.styleId && doc.styles.find((s) => s.id === it.styleId);
-      h += `<section><h5>Text</h5>
-        <div class="field field-wide"><span>Style</span><select class="input" data-style-pick="1"><option value="">No style (just this box)</option>${doc.styles.map((s) => `<option value="${s.id}" ${s.id === it.styleId ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
-        ${shared ? `<p class="hint">Changes below change the “${esc(shared.name)}” style everywhere. <a href="#" data-act="detach">Just this box</a></p>` : ''}
-        ${fontPicker(st.font)}
-        <div class="grid2">${num('Size', 's.size', st.size, 'pt')}${num('Leading', 's.leading', st.leading, 'pt')}${num('Tracking', 's.tracking', st.tracking || 0, '/1000')}${num('After ¶', 's.spaceAfter', st.spaceAfter || 0, 'pt')}${num('Indent', 's.indent', st.indent || 0, 'mm')}</div>
-        ${colorBtn('Colour', 's.color', st.color, false)}
-        <div class="field field-wide"><span>Align</span>${seg('s.align', (it.styleOverride && it.styleOverride.align) || st.align, [['left', '⟸', 'Left'], ['center', '≡', 'Centre'], ['right', '⟹', 'Right'], ['justify', '☰', 'Justified']])}</div>
-        <div class="field field-wide"><span>Vertical</span>${seg('s.valign', st.valign || 'top', [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}</div>
-        <div class="btn-row"><button class="btn btn-sm" data-act="edit-text">Edit text</button><button class="btn btn-sm" data-act="story">Story…</button></div>
-        <div class="btn-row">${it.next ? `<button class="btn btn-sm" data-act="unlink">Stop continuing</button>` : `<button class="btn btn-sm" data-act="link">Continue in another box…</button>`}<button class="btn btn-sm" data-act="style-from">New style from this</button></div>
-      </section>`;
-    }
+    if (it.type === 'text') h += textSection([it]);
     if (it.type === 'image') {
       const a = doc.assets[it.asset];
       h += `<section><h5>Photo</h5>
@@ -387,6 +373,32 @@ const Panels = (() => {
     return h;
   }
 
+
+  // The Text section for one text box or several. With several, a field shows a value only when
+  // all of them share it; whatever you set goes to every selected box and nothing else.
+  function textSection(texts) {
+    const { doc } = S();
+    const it = texts[0];
+    const many = texts.length > 1 ? texts.length : 0;
+    const sts = texts.map((x) => Model.styleOf(doc, x));
+    const st = sts[0];
+    const same = (k, d) => (sts.every((s) => (s[k] ?? d) === (st[k] ?? d)) ? st[k] ?? d : null);
+    const styleIds = new Set(texts.map((x) => x.styleId || ''));
+    const styleId = styleIds.size === 1 ? it.styleId : null;
+    const shared = styleId && doc.styles.find((s) => s.id === styleId);
+    return `<section><h5>Text${many ? ` <span class="muted">· ${many} boxes</span>` : ''}</h5>
+      <div class="field field-wide"><span>Style</span><select class="input" data-style-pick="1">${styleIds.size > 1 ? '<option value="-" selected>Mixed</option>' : ''}<option value="">No style</option>${doc.styles.map((s) => `<option value="${s.id}" ${styleIds.size === 1 && s.id === it.styleId ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
+      <p class="hint">${many ? `Changes here go to the ${many} selected text boxes, and only to them.` : 'Changes here are just for this box.'}${shared ? ` ${many ? 'Their' : 'Its'} settings started from “${esc(shared.name)}”. <a href="#" data-act="reset-style">Reset to “${esc(shared.name)}”</a>` : ''}</p>
+      ${fontPicker(same('font', ''))}
+      <div class="grid2">${num('Size', 's.size', same('size'), 'pt')}${num('Leading', 's.leading', same('leading'), 'pt')}${num('Tracking', 's.tracking', same('tracking', 0), '/1000')}${num('After ¶', 's.spaceAfter', same('spaceAfter', 0), 'pt')}${num('Indent', 's.indent', same('indent', 0), 'mm')}</div>
+      ${colorBtn('Colour', 's.color', st.color, false)}
+      <div class="field field-wide"><span>Align</span>${seg('s.align', same('align', 'left'), [['left', '⟸', 'Left'], ['center', '≡', 'Centre'], ['right', '⟹', 'Right'], ['justify', '☰', 'Justified']])}</div>
+      <div class="field field-wide"><span>Vertical</span>${seg('s.valign', same('valign', 'top'), [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}</div>
+      ${many ? '' : `<div class="btn-row"><button class="btn btn-sm" data-act="edit-text">Edit text</button><button class="btn btn-sm" data-act="story">Story…</button></div>
+      <div class="btn-row">${it.next ? '<button class="btn btn-sm" data-act="unlink">Stop continuing</button>' : '<button class="btn btn-sm" data-act="link">Continue in another box…</button>'}<button class="btn btn-sm" data-act="style-from">New style from this</button></div>`}
+    </section>`;
+  }
+
   function multiProps(items) {
     return `<section><h5>${items.length} selected</h5>
       <div class="field field-wide"><span>Align</span><div class="seg">
@@ -394,7 +406,8 @@ const Panels = (() => {
         <button data-align="top" title="Tops">⤒</button><button data-align="vcenter" title="Middles">↕</button><button data-align="bottom" title="Bottoms">⤓</button></div></div>
       ${items.length > 2 ? `<div class="field field-wide"><span>Spread out</span><div class="seg"><button data-align="dist-h">Across</button><button data-align="dist-v">Down</button></div></div>` : ''}
       <div class="grid2">${num('Opacity', 'opacity', Math.round((items[0].opacity ?? 1) * 100), '%')}</div>
-      <div class="btn-row"><button class="btn btn-sm" data-act="duplicate">Duplicate</button><button class="btn btn-sm btn-danger-ghost" data-act="delete">Delete</button></div></section>`;
+      <div class="btn-row"><button class="btn btn-sm" data-act="duplicate">Duplicate</button><button class="btn btn-sm btn-danger-ghost" data-act="delete">Delete</button></div></section>
+      ${items.some((x) => x.type === 'text') ? textSection(items.filter((x) => x.type === 'text')) : ''}`;
   }
 
   function docProps() {
@@ -480,14 +493,10 @@ const Panels = (() => {
     App.change('Edit', () => {
       for (const it of items) {
         if (f.startsWith('s.')) {
+          if (it.type !== 'text') continue;
           const k = f.slice(2);
-          const shared = it.styleId && doc.styles.find((s) => s.id === it.styleId);
-          if (k === 'align' && shared) {
-            // Alignment is per box when the box uses a shared style.
-            it.styleOverride = { ...(it.styleOverride || {}), align: v };
-            continue;
-          }
-          const target = shared || it.style;
+          // Text settings belong to this box only.
+          const target = Model.styleOf(doc, it);
           if (k === 'size') {
             const ratio = (target.leading || target.size * 1.2) / target.size;
             target.size = clamp(v, 1, 1000);
@@ -519,7 +528,8 @@ const Panels = (() => {
       if (el.dataset.font === 'family') {
         const fam = Fonts.families().find(([f]) => f === el.value);
         if (!fam) return;
-        const cur = Fonts.info(Model.styleOf(doc, items[0]).font);
+        const firstText = items.find((x) => x.type === 'text');
+        const cur = firstText && Fonts.info(Model.styleOf(doc, firstText).font);
         const pick = fam[1].find((s) => cur && s.style === cur.style) || fam[1].find((s) => /^regular$/i.test(s.style)) || fam[1][0];
         path = pick.path;
       } else path = el.value;
@@ -528,12 +538,9 @@ const Panels = (() => {
     }
     if (el.dataset.stylePick !== undefined && el.dataset.stylePick !== '') {
       const id = el.value;
+      if (id === '-') return; // "Mixed": nothing to apply
       return App.change('Apply style', () => {
-        for (const it of Editor.selectedItems()) {
-          if (!id && it.styleId) it.style = { ...Model.styleOf(doc, it) };
-          it.styleId = id || null;
-          it.styleOverride = null;
-        }
+        for (const it of Editor.selectedItems()) if (it.type === 'text') Model.applyStyle(doc, it, id ? doc.styles.find((s) => s.id === id) : null);
       });
     }
     if (el.dataset.preset) {
@@ -605,7 +612,7 @@ const Panels = (() => {
       if (a === 'story') return Story.open(it);
       if (a === 'link') return startLink(it);
       if (a === 'unlink') return App.change('Stop continuing', () => (it.next = null));
-      if (a === 'detach') return App.change('Just this box', () => ((it.style = { ...Model.styleOf(doc, it) }), (it.styleId = null), (it.styleOverride = null)));
+      if (a === 'reset-style') return App.change('Reset to style', () => { for (const x of Editor.selectedItems()) if (x.type === 'text' && x.styleId) Model.applyStyle(doc, x, doc.styles.find((s) => s.id === x.styleId)); });
       if (a === 'style-from') return newStyleFrom(it);
       if (a === 'replace-photo') return App.pickPhotoFor(it);
       if (a === 'crop') return App.startCrop(it);
@@ -627,10 +634,8 @@ const Panels = (() => {
       if (!items.length) return SwatchEditor.open(doc.swatches.find((s) => s.id === id));
       return App.change('Colour', () => {
         for (const x of items) {
-          if (x.type === 'text') {
-            const shared = x.styleId && doc.styles.find((s) => s.id === x.styleId);
-            (shared || x.style).color = { sw: id };
-          } else if (x.type === 'line' || x.type === 'image') x.stroke = { sw: id };
+          if (x.type === 'text') Model.styleOf(doc, x).color = { sw: id };
+          else if (x.type === 'line' || x.type === 'image') x.stroke = { sw: id };
           else x.fill = { sw: id };
         }
       });
@@ -640,7 +645,8 @@ const Panels = (() => {
       const id = sty.dataset.stylerow;
       if (e.target.closest('[data-edit]') || !items.some((x) => x.type === 'text')) return StyleEditor.open(doc.styles.find((s) => s.id === id));
       return App.change('Apply style', () => {
-        for (const x of items) if (x.type === 'text') (x.styleId = id), (x.styleOverride = null);
+        const st = doc.styles.find((s) => s.id === id);
+        for (const x of items) if (x.type === 'text') Model.applyStyle(doc, x, st);
       });
     }
     const ks = e.target.closest('[data-kitswatch]');
@@ -684,7 +690,8 @@ const Panels = (() => {
         { label: 'Edit…', run: () => StyleEditor.open(s) },
         { label: 'Add to brand kit', run: () => App.kit.addStyles([s]) },
         { label: 'Delete', run: () => App.change('Delete style', () => {
-          for (const sf of Model.allSurfaces(doc)) for (const it of Model.surfaceItems(doc, sf)) if (it.styleId === s.id) (it.style = { ...Model.styleOf(doc, it) }), (it.styleId = null);
+          // Boxes keep their own settings; they just no longer say which style they came from.
+          for (const sf of Model.allSurfaces(doc)) for (const it of Model.surfaceItems(doc, sf)) if (it.styleId === s.id) it.styleId = null;
           doc.styles = doc.styles.filter((x) => x !== s);
         }) },
       ]);
@@ -734,7 +741,10 @@ const Panels = (() => {
     App.change('Continue text', () => {
       Model.findItem(doc, from).item.next = id;
       target.text = '';
-      target.styleId = Model.findItem(doc, from).item.styleId;
+      // Text that continues into this box uses the first box's settings.
+      const head = Model.findItem(doc, from).item;
+      target.style = clone(Model.styleOf(doc, head));
+      target.styleId = head.styleId;
     });
   }
 
@@ -746,7 +756,7 @@ const Panels = (() => {
     for (const s of doc.swatches)
       h += `<div class="swatch" data-swatch="${s.id}" title="${esc(s.name)} · C${s.c} M${s.m} Y${s.y} K${s.k}"><i style="background:${Color.css(s)}"></i><span>${esc(s.name)}</span><em>${s.c}/${s.m}/${s.y}/${s.k}</em><button class="mini" data-edit="1" title="Edit">✎</button></div>`;
     h += `</div></section><section><div class="pp-head"><h5>Text styles</h5><button class="btn btn-sm" data-act="new-style">+ Style</button></div>
-      <p class="hint">Change a style and every box using it changes too.</p><div class="styles">`;
+      <p class="hint">Click a style to give the selected text its settings. Each text box keeps its own settings, so changing a style only changes boxes when you choose to.</p><div class="styles">`;
     for (const s of doc.styles) {
       const f = Fonts.get(s.font);
       h += `<div class="style-row" data-stylerow="${s.id}"><span class="style-sample" style="font-family:'${f ? f.cssName : 'sans-serif'}';color:${Color.css(Model.resolveColor(doc, s.color))}">${esc(s.name)}</span><em>${esc(Fonts.info(s.font)?.family || 'Missing font')} ${s.size}/${s.leading} pt</em><button class="mini" data-edit="1" title="Edit">✎</button></div>`;
@@ -760,10 +770,9 @@ const Panels = (() => {
     prompt('Name for the new style', 'My style').then((name) => {
       if (!name) return;
       App.change('New style', () => {
-        const st = { ...Model.styleOf(doc, it), id: uid('st'), name: name.trim() };
+        const st = { ...clone(Model.styleOf(doc, it)), id: uid('st'), name: name.trim() };
         doc.styles.push(st);
         it.styleId = st.id;
-        it.styleOverride = null;
       });
     });
   }
@@ -983,6 +992,17 @@ const StyleEditor = (() => {
           if (st) Object.assign(st, v);
           else doc.styles.push(v);
         }, { thumbs: 'all' });
+        // Boxes keep their own settings, so ask before giving them the style's new ones.
+        const using = st ? Model.allSurfaces(doc).flatMap((s) => Model.surfaceItems(doc, s)).filter((it) => it.type === 'text' && it.styleId === st.id) : [];
+        if (using.length) {
+          m.close();
+          ask(`Update the ${using.length} text box${using.length === 1 ? '' : 'es'} that use “${st.name}”?`, {
+            detail: "They get the style's new settings, replacing any changes made to them one by one. Choose Just the style to leave them as they are.",
+            ok: 'Update them',
+            cancel: 'Just the style',
+          }).then((yes) => yes && App.change('Update boxes to style', () => using.forEach((it) => Model.applyStyle(doc, it, st)), { thumbs: 'all' }));
+          return;
+        }
       }
       m.close();
     });
