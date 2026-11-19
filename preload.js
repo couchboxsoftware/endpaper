@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const call = (ch) => (...a) => ipcRenderer.invoke(ch, ...a);
 const channels = [
-  'app:info', 'app:close-ack', 'app:close-ok', 'app:confirm', 'app:reveal', 'app:readAppFile', 'app:boot',
+  'app:info', 'app:close-ack', 'app:close-ok', 'app:confirm', 'app:reveal', 'app:readAppFile', 'app:boot', 'app:full-screen', 'app:quit',
   'settings:get', 'settings:set', 'changelog:get',
   'file:open', 'file:read', 'file:save', 'file:export', 'file:exportMany', 'recent:list', 'recent:forget',
   'image:pick', 'fonts:list', 'fonts:read', 'fonts:add',
@@ -21,7 +21,7 @@ for (const ch of channels) {
   (api[a] = api[a] || {})[b.replace(/-(\w)/g, (_, c) => c.toUpperCase())] = call(ch);
 }
 api.on = (ch, fn) => {
-  if (!['app:close-request', 'app:open-file', 'update', 'update:prepare', 'update-dry'].includes(ch)) return;
+  if (!['app:close-request', 'app:open-file', 'app:fullscreen', 'update', 'update:prepare', 'update-dry'].includes(ch)) return;
   ipcRenderer.on(ch, (_e, ...a) => fn(...a));
 };
 contextBridge.exposeInMainWorld('ep', api);

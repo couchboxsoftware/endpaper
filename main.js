@@ -13,6 +13,9 @@ const BIN_DAYS = 30;
 
 // Test mode (EP_TEST=path to a script): a separate settings folder, and the script drives the app.
 if (process.env.EP_TEST_USERDATA) app.setPath('userData', process.env.EP_TEST_USERDATA);
+// Running from the source folder (Start Endpaper.cmd) is the test version: it has its own
+// settings, so it runs alongside the installed Endpaper instead of handing over to it.
+else if (!app.isPackaged) app.setPath('userData', path.join(app.getPath('appData'), 'Endpaper Test Version'));
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
@@ -93,6 +96,10 @@ function createWindow() {
     title: 'Endpaper',
     icon: path.join(ROOT, 'build', 'icon.png'),
     autoHideMenuBar: true,
+    // Endpaper draws its own title bar with the menus (renderer/menubar.js); Windows keeps the
+    // minimise, maximise and close buttons on the right.
+    titleBarStyle: 'hidden',
+    titleBarOverlay: { color: '#141317', symbolColor: '#ecebf0', height: 34 },
     show: false,
     webPreferences: { preload: path.join(ROOT, 'preload.js'), contextIsolation: true, nodeIntegration: false, spellcheck: true },
   });
@@ -126,8 +133,15 @@ function createWindow() {
     }, 2500);
   });
   win.webContents.on('render-process-gone', () => (rendererGone = true));
+  win.on('enter-full-screen', () => win.webContents.send('app:fullscreen', true));
+  win.on('leave-full-screen', () => win.webContents.send('app:fullscreen', false));
   win.webContents.on('before-input-event', (e, input) => {
     if (input.type === 'keyDown' && input.control && input.shift && input.key.toLowerCase() === 'i') win.webContents.toggleDevTools();
+    // F11 switches full screen on and off anywhere in the app.
+    if (input.type === 'keyDown' && input.key === 'F11' && !input.control && !input.alt) {
+      e.preventDefault();
+      win.setFullScreen(!win.isFullScreen());
+    }
   });
   win.loadURL('app://endpaper/renderer/index.html');
   if (process.env.EP_TEST) {
@@ -306,8 +320,10 @@ handle('app:info', () => {
   saveSettings();
   const f = pendingOpen;
   pendingOpen = null;
-  return { version, updated, firstRun, openFile: f, reopen, userData: app.getPath('userData') };
+  return { version, updated, firstRun, openFile: f, reopen, userData: app.getPath('userData'), testVersion: !app.isPackaged };
 });
+handle('app:full-screen', () => win && win.setFullScreen(!win.isFullScreen()));
+handle('app:quit', () => win && win.close());
 handle('app:close-ack', () => {
   closeAcked = true;
 });

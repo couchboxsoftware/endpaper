@@ -43,7 +43,7 @@ const Editor = (() => {
 
   /* ---------- the spread ---------- */
   function spreadSurfaces(doc, s) {
-    if (s.kind === 'cover') return [{ kind: 'cover' }];
+    if (s.kind === 'cover') return [{ kind: 'cover', ...(Model.isInside(s) ? { side: 'inside' } : {}), ...(s.part ? { part: s.part } : {}) }];
     if (s.kind === 'master') return doc.facing ? [{ kind: 'master', id: s.id, side: 'left' }, { kind: 'master', id: s.id, side: 'right' }] : [{ kind: 'master', id: s.id, side: 'right' }];
     const sp = Model.spreads(doc).find((x) => x.includes(s.idx)) || [s.idx];
     return sp.map((idx) => ({ kind: 'page', idx }));
@@ -65,7 +65,8 @@ const Editor = (() => {
       const bl = { l: sz.bleed, t: sz.bleed, r: sz.bleed, b: sz.bleed };
       if (doc.facing && list.length === 2 && sd === 'left') bl.r = 0;
       if (doc.facing && list.length === 2 && sd === 'right') bl.l = 0;
-      geo.push({ surface: s, ox: x, oy: PAD + sz.bleed * k, w: sz.w, h: sz.h, bl, side: sd });
+      // org: where this page's 0 sits on its item list (cover pages are windows onto the sheet).
+      geo.push({ surface: s, ox: x, oy: PAD + sz.bleed * k, w: sz.w, h: sz.h, bl, side: sd, org: Model.surfaceOrigin(doc, s) });
       x += sz.w * k;
     }
     const totalW = (doc.facing && list[0].kind !== 'cover' ? sz0.w * 2 : geo.reduce((a, g) => a + g.w, 0)) + 2 * b;
@@ -98,7 +99,7 @@ const Editor = (() => {
       Object.assign(pageEl.style, { left: g.ox - g.bl.l * k + 'px', top: g.oy - g.bl.t * k + 'px', width: (g.w + g.bl.l + g.bl.r) * k + 'px', height: (g.h + g.bl.t + g.bl.b) * k + 'px' });
       const inner = document.createElement('div');
       inner.className = 'page-origin';
-      inner.style.left = g.bl.l * k + 'px';
+      inner.style.left = (g.bl.l - g.org) * k + 'px';
       inner.style.top = g.bl.t * k + 'px';
       pageEl.appendChild(inner);
       const pc = Render.ctxFor(doc, g.surface);
@@ -200,14 +201,33 @@ const Editor = (() => {
         if (g.bl.r) d.push(`M${bx1} ${by0}V${by1}`);
         if (g.bl.l || g.bl.r || g.bl.t) svgParts.push(`<path class="g-bleed" d="${d.join('')}"/>`);
         // Safe area (margins).
-        if (g.surface.kind === 'cover') {
+        if (Model.isCoverPage(g.surface)) {
+          // One cover page: a 6 mm safe area, and on the inside the glue strip along the spine edge.
+          const safe = 6 * k;
+          svgParts.push(`<rect class="g-margin" x="${x + safe}" y="${y + safe}" width="${W - 2 * safe}" height="${H - 2 * safe}"/>`);
+          if (Model.isInside(g.surface)) {
+            const c = Model.cover(doc);
+            const a = Math.max(0, c.glue[0] - g.org), b2 = Math.min(g.w, c.glue[1] - g.org);
+            if (b2 > a) {
+              svgParts.push(`<rect class="g-glue" x="${x + a * k}" y="${y}" width="${(b2 - a) * k}" height="${H}"/>`);
+              svgParts.push(`<text class="g-label g-glue-label" x="${x + ((a + b2) / 2) * k}" y="${y - 26}" text-anchor="${a < 1 ? 'start' : 'end'}">Glue area: keep clear</text>`);
+            }
+          }
+        } else if (g.surface.kind === 'cover') {
           const c = Model.cover(doc);
           const safe = 6 * k;
           for (const [a, b2] of [c.back, c.front]) svgParts.push(`<rect class="g-margin" x="${x + a * k + safe}" y="${y + safe}" width="${(b2 - a) * k - 2 * safe}" height="${H - 2 * safe}"/>`);
           for (const sx of c.spineX) svgParts.push(`<line class="g-spine" x1="${x + sx * k}" y1="${y - 20}" x2="${x + sx * k}" y2="${y + H + 20}"/>`);
           svgParts.push(`<text class="g-label" x="${x + ((c.spineX[0] + c.spineX[1]) / 2) * k}" y="${y - 26}" text-anchor="middle">Spine ${c.spine.toFixed(2)} mm</text>`);
-          svgParts.push(`<text class="g-label" x="${x + (c.back[0] + c.back[1]) / 2 * k}" y="${y - 26}" text-anchor="middle">Back</text>`);
-          svgParts.push(`<text class="g-label" x="${x + (c.front[0] + c.front[1]) / 2 * k}" y="${y - 26}" text-anchor="middle">Front</text>`);
+          // The inside is the sheet turned over: inside front on the left, inside back on the right.
+          const inside = Model.isInside(g.surface);
+          svgParts.push(`<text class="g-label" x="${x + (c.back[0] + c.back[1]) / 2 * k}" y="${y - 26}" text-anchor="middle">${inside ? 'Inside front' : 'Back'}</text>`);
+          svgParts.push(`<text class="g-label" x="${x + (c.front[0] + c.front[1]) / 2 * k}" y="${y - 26}" text-anchor="middle">${inside ? 'Inside back' : 'Front'}</text>`);
+          if (inside) {
+            const gx = x + c.glue[0] * k, gw = (c.glue[1] - c.glue[0]) * k;
+            svgParts.push(`<rect class="g-glue" x="${gx}" y="${y}" width="${gw}" height="${H}"/>`);
+            svgParts.push(`<text class="g-label g-glue-label" x="${gx + gw / 2}" y="${y - 40}" text-anchor="middle">Glue area: keep clear</text>`);
+          }
         } else {
           const m = Model.margins(doc, g.side);
           svgParts.push(`<rect class="g-margin" x="${x + m.left * k}" y="${y + m.top * k}" width="${W - (m.left + m.right) * k}" height="${H - (m.top + m.bottom) * k}"/>`);
@@ -216,7 +236,7 @@ const Editor = (() => {
       // Trim edge.
       svgParts.push(`<rect class="g-trim" x="${x}" y="${y}" width="${W}" height="${H}"/>`);
       // Page label under the page.
-      const label = g.surface.kind === 'page' ? `${Model.pageNumber(doc, g.surface.idx)}` : g.surface.kind === 'master' ? `${Model.master(doc, g.surface.id)?.name}${doc.facing ? (g.surface.side === 'left' ? ' · left' : ' · right') : ''}` : 'Cover';
+      const label = g.surface.kind === 'page' ? `${Model.pageNumber(doc, g.surface.idx)}` : g.surface.kind === 'master' ? `${Model.master(doc, g.surface.id)?.name}${doc.facing ? (g.surface.side === 'left' ? ' · left' : ' · right') : ''}` : Model.surfaceName(doc, g.surface);
       svgParts.push(`<text class="g-pagelabel" x="${x + W / 2}" y="${y + H + (g.bl.b * k) + 22}" text-anchor="middle">${esc(label)}</text>`);
     }
     for (const gl of guidesShown) {
@@ -272,7 +292,7 @@ const Editor = (() => {
   }
   const boxStyle = (g, it) => {
     const k = z();
-    return `left:${g.ox + it.x * k}px;top:${g.oy + it.y * k}px;width:${it.w * k}px;height:${it.h * k}px;${it.rot ? `transform:rotate(${it.rot}deg);` : ''}`;
+    return `left:${gx(g) + it.x * k}px;top:${g.oy + it.y * k}px;width:${it.w * k}px;height:${it.h * k}px;${it.rot ? `transform:rotate(${it.rot}deg);` : ''}`;
   };
   const geoFor = (s) => geo.find((g) => Model.sameSurface(g.surface, s));
 
@@ -299,14 +319,21 @@ const Editor = (() => {
     }
     return best;
   }
-  const toMm = (g, p) => ({ x: (p.x - g.ox) / z(), y: (p.y - g.oy) / z() });
+  // Screen x of a page's item 0 (the page's left edge, less any cover-page offset).
+  const gx = (g) => g.ox - (g.org || 0) * z();
+  const toMm = (g, p) => ({ x: (p.x - gx(g)) / z(), y: (p.y - g.oy) / z() });
 
   /* ---------- snapping ---------- */
   function snapTargets(g, exclude) {
     const { doc } = S();
-    const xs = [0, g.w / 2, g.w, -g.bl.l, g.w + g.bl.r];
+    // Page edges, centre and bleed, in item coordinates (cover pages are offset by org).
+    const o = g.org || 0;
+    const xs = [0, g.w / 2, g.w, -g.bl.l, g.w + g.bl.r].map((v) => v + o);
     const ys = [0, g.h / 2, g.h, -g.bl.t, g.h + g.bl.b];
-    if (g.surface.kind === 'cover') {
+    if (Model.isCoverPage(g.surface)) {
+      xs.push(o + 6, o + g.w - 6);
+      ys.push(6, g.h - 6);
+    } else if (g.surface.kind === 'cover') {
       const c = Model.cover(doc);
       xs.push(...c.spineX, (c.front[0] + c.front[1]) / 2, (c.back[0] + c.back[1]) / 2, c.back[0] + 6, c.back[1] - 6, c.front[0] + 6, c.front[1] - 6);
       ys.push(6, g.h - 6);
@@ -384,7 +411,7 @@ const Editor = (() => {
     if (itemEl && !itemEl.dataset.master && !itemEl.classList.contains('locked')) id = itemEl.dataset.id;
     else if (selEl && !selEl.classList.contains('sel-locked')) id = selEl.dataset.id;
     if (id) {
-      const found = Model.findItem(doc, id);
+      const found = Model.findItem(doc, id, S().surface);
       if (found && !Model.sameSurface(found.surface, S().surface)) App.goTo(found.surface, { keepSel: false });
       const sel = S().sel;
       if (e.shiftKey || e.ctrlKey) {
@@ -443,7 +470,7 @@ const Editor = (() => {
         const t = snapTargets(drag.g, S().sel);
         const sx = snap1([x0 + mx, (x0 + x1) / 2 + mx, x1 + mx], t.xs, tol);
         const sy = snap1([y0 + my, (y0 + y1) / 2 + my, y1 + my], t.ys, tol);
-        if (sx && !(e.shiftKey && mx === 0)) (mx += sx.d), guidesShown.push({ x: drag.g.ox + sx.t * k });
+        if (sx && !(e.shiftKey && mx === 0)) (mx += sx.d), guidesShown.push({ x: gx(drag.g) + sx.t * k });
         if (sy && !(e.shiftKey && my === 0)) (my += sy.d), guidesShown.push({ y: drag.g.oy + sy.t * k });
       }
       for (const d of drag.items) (d.it.x = d.x + mx), (d.it.y = d.y + my);
@@ -461,8 +488,8 @@ const Editor = (() => {
       // Edge snapping (boxes that aren't rotated).
       if (snapOn && !o.rot && drag.g) {
         const t = snapTargets(drag.g, new Set([it.id]));
-        if (hx === 1) { const s = snap1([o.x + nw], t.xs, tol); if (s) (nw += s.d), guidesShown.push({ x: drag.g.ox + s.t * k }); }
-        if (hx === -1) { const s = snap1([o.x + o.w - nw], t.xs, tol); if (s) (nw -= s.d), guidesShown.push({ x: drag.g.ox + s.t * k }); }
+        if (hx === 1) { const s = snap1([o.x + nw], t.xs, tol); if (s) (nw += s.d), guidesShown.push({ x: gx(drag.g) + s.t * k }); }
+        if (hx === -1) { const s = snap1([o.x + o.w - nw], t.xs, tol); if (s) (nw -= s.d), guidesShown.push({ x: gx(drag.g) + s.t * k }); }
         if (hy === 1 && it.type !== 'line') { const s = snap1([o.y + nh], t.ys, tol); if (s) (nh += s.d), guidesShown.push({ y: drag.g.oy + s.t * k }); }
         if (hy === -1 && it.type !== 'line') { const s = snap1([o.y + o.h - nh], t.ys, tol); if (s) (nh -= s.d), guidesShown.push({ y: drag.g.oy + s.t * k }); }
       }
@@ -485,7 +512,7 @@ const Editor = (() => {
       paintSelected();
     } else if (drag.kind === 'rotate') {
       const { it, g } = drag;
-      const c = { x: g.ox + (it.x + it.w / 2) * k, y: g.oy + (it.y + it.h / 2) * k };
+      const c = { x: gx(g) + (it.x + it.w / 2) * k, y: g.oy + (it.y + it.h / 2) * k };
       let ang = (Math.atan2(p.y - c.y, p.x - c.x) * 180) / Math.PI + 90;
       if (e.shiftKey) ang = Math.round(ang / 15) * 15;
       else if (snapOn) for (const s of [0, 90, 180, 270, 360, -90]) if (Math.abs(ang - s) < 2) ang = s;
@@ -499,9 +526,9 @@ const Editor = (() => {
       drag.rect = r;
       if (drag.kind === 'marquee' && drag.g) {
         const g = drag.g;
-        const hit = Model.surfaceItems(doc, g.surface).filter((it) => {
+        const hit = Render.itemsOf(doc, g.surface).filter((x) => !x.master).map((x) => x.it).filter((it) => {
           if (it.locked || it.hidden) return false;
-          const ix = g.ox + it.x * k, iy = g.oy + it.y * k;
+          const ix = gx(g) + it.x * k, iy = g.oy + it.y * k;
           return ix < r.x + r.w && ix + it.w * k > r.x && iy < r.y + r.h && iy + it.h * k > r.y;
         });
         S().sel = new Set([...drag.base, ...hit.map((x) => x.id)]);
@@ -561,13 +588,13 @@ const Editor = (() => {
     if (!from || geo.length < 2) return;
     const k = z();
     const it0 = items[0];
-    const cx = from.ox + (it0.x + it0.w / 2) * k;
+    const cx = gx(from) + (it0.x + it0.w / 2) * k;
     const cy = from.oy + (it0.y + it0.h / 2) * k;
     const to = geo.find((g) => g !== from && cx >= g.ox && cx <= g.ox + g.w * k && cy >= g.oy - 50 && cy <= g.oy + g.h * k + 50);
     if (!to) return;
     const src = Model.surfaceItems(doc, surface);
     const dst = Model.surfaceItems(doc, to.surface);
-    const dxmm = (from.ox - to.ox) / k;
+    const dxmm = (gx(from) - gx(to)) / k;
     for (const it of items) {
       src.splice(src.indexOf(it), 1);
       it.x += dxmm;
@@ -592,7 +619,9 @@ const Editor = (() => {
   }
 
   function onDbl(e) {
-    const el = e.target.closest('.item, .sel');
+    // The selection outline is redrawn between the two clicks, so Windows can report the
+    // double-click on the layer behind it. Look for the box under the pointer instead.
+    const el = e.target.closest('.item, .sel') || document.elementsFromPoint(e.clientX, e.clientY).find((x) => x.matches('.sel[data-id], .item[data-id]'));
     if (!el) return;
     const id = el.dataset.id;
     const found = id && Model.findItem(S().doc, id);
@@ -672,7 +701,7 @@ const Editor = (() => {
     if (before && m) {
       const g = geo.find((x) => Model.sameSurface(x.surface, before.surface));
       if (g) {
-        stage.scrollLeft += g.ox + m.x * newZ - (cx - board.getBoundingClientRect().left);
+        stage.scrollLeft += gx(g) + m.x * newZ - (cx - board.getBoundingClientRect().left);
         stage.scrollTop += g.oy + m.y * newZ - (cy - board.getBoundingClientRect().top);
       }
     }
@@ -721,7 +750,7 @@ const Editor = (() => {
     App.placePhotos(list, m);
   }
 
-  return { init, render, renderOverlay, fit, zoomAt, spreadSurfaces, paintSelected, selectedItems, get geo() { return geo; }, geoFor, get stage() { return stage; }, get board() { return board; } };
+  return { init, render, renderOverlay, fit, zoomAt, spreadSurfaces, paintSelected, selectedItems, get geo() { return geo; }, geoFor, gx, get stage() { return stage; }, get board() { return board; } };
 })();
 
 /* Typing into a text box: a text area laid over the box, in the box's own font. Text that
@@ -751,7 +780,7 @@ const Text = (() => {
     // Start the first line where the layout puts it.
     const firstTop = L.lines[0] ? L.lines[0].y * k - (L.asc * k) - (lead - size) / 2 : 0;
     Object.assign(ta.style, {
-      left: g.ox + it.x * k + 'px',
+      left: Editor.gx(g) + it.x * k + 'px',
       top: g.oy + it.y * k + 'px',
       width: Math.max(40, it.w * k) + 'px',
       height: Math.max(lead * 1.5, it.h * k) + 'px',

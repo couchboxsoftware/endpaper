@@ -76,7 +76,7 @@ const Model = (() => {
         { id: 'st-folio', name: 'Page number', ...textStyle({ font: 'C:\\Windows\\Fonts\\georgia.ttf', size: 9, leading: 11, align: 'center' }) },
       ],
       assets: {},
-      cover: { enabled: book, paper: 'kdp-white', perPage: 0.0572, spineExtra: 0, bleed: 3, items: [] },
+      cover: { enabled: book, paper: 'kdp-white', perPage: 0.0572, spineExtra: 0, bleed: 3, items: [], inside: { enabled: false, items: [] }, layout: 'spread', order: 'outside-first' },
       created: Date.now(),
     };
     for (let i = 0; i < Math.max(1, pages); i++) doc.pages.push(newPage(doc));
@@ -144,17 +144,76 @@ const Model = (() => {
     const c = doc.cover;
     const per = c.perPage || 0.0572;
     const spine = Math.max(0, coverPages(doc) * per + (c.spineExtra || 0));
-    return { w: doc.w * 2 + spine, h: doc.h, spine, back: [0, doc.w], spineX: [doc.w, doc.w + spine], front: [doc.w + spine, doc.w * 2 + spine] };
+    const w = doc.w * 2 + spine;
+    // The inside of the cover is the same sheet turned over: inside front on the left, inside back
+    // on the right. The spine and a strip either side of it are glued to the pages.
+    return { w, h: doc.h, spine, back: [0, doc.w], spineX: [doc.w, doc.w + spine], front: [doc.w + spine, w], glue: [Math.max(0, doc.w - GLUE), Math.min(w, doc.w + spine + GLUE)] };
+  }
+  const GLUE = 6; // mm either side of the spine kept clear on the inside of the cover
+  const isInside = (s) => s.kind === 'cover' && s.side === 'inside';
+
+  // A cover can be laid out as one spread (back, spine, front) or as single pages. Single pages
+  // are windows onto the same cover sheet: { kind: 'cover', part: 'front' | 'back' }, plus
+  // side: 'inside' for the inside cover. Nothing is moved or copied when switching, so the spine
+  // (and anything on it) is just out of view until the cover is a spread again.
+  const isSingle = (doc) => doc.cover.layout === 'single';
+  const isCoverPage = (s) => s.kind === 'cover' && !!s.part;
+  const COVER_ORDERS = {
+    'outside-first': ['front', 'back', 'inside-front', 'inside-back'],
+    reading: ['front', 'inside-front', 'inside-back', 'back'],
+  };
+  function coverSurfaces(doc) {
+    if (!doc.cover.enabled) return [];
+    const inside = doc.cover.inside.enabled;
+    if (!isSingle(doc)) return [{ kind: 'cover' }, ...(inside ? [{ kind: 'cover', side: 'inside' }] : [])];
+    return (COVER_ORDERS[doc.cover.order] || COVER_ORDERS['outside-first'])
+      .filter((p) => inside || !p.startsWith('inside'))
+      .map((p) => (p.startsWith('inside') ? { kind: 'cover', side: 'inside', part: p.slice(7) } : { kind: 'cover', part: p }));
+  }
+  // Where a surface's own 0 sits on its item list, in mm. Only cover pages in single-page
+  // layout are offset: the front cover starts after the back and the spine.
+  function surfaceOrigin(doc, s) {
+    if (!isCoverPage(s)) return 0;
+    const c = cover(doc);
+    // Outside: back on the left, front on the right. Inside: inside front on the left.
+    const right = isInside(s) ? s.part === 'back' : s.part === 'front';
+    return right ? c.front[0] : 0;
+  }
+  // The cover surface to show for the current layout: switching layout keeps you on the same
+  // side of the cover (and the front, when going to single pages).
+  function coverSurfaceFor(doc, s) {
+    if (s.kind !== 'cover') return s;
+    const inside = isInside(s) && doc.cover.inside.enabled;
+    if (isSingle(doc)) return { kind: 'cover', ...(inside ? { side: 'inside' } : {}), part: s.part || 'front' };
+    return inside ? { kind: 'cover', side: 'inside' } : { kind: 'cover' };
+  }
+  // What to call a surface in labels, the status bar and print checks.
+  function surfaceName(doc, s) {
+    if (s.kind === 'page') return `Page ${pageNumber(doc, s.idx)}`;
+    if (s.kind === 'cover') {
+      if (isCoverPage(s)) return `${isInside(s) ? 'Inside ' + s.part : s.part === 'front' ? 'Front' : 'Back'} cover`;
+      return isInside(s) ? 'Inside cover' : 'Cover';
+    }
+    return `${master(doc, s.id)?.name || 'Master'}${doc.facing ? (s.side === 'left' ? ', left' : ', right') : ''}`;
+  }
+  // Is a box on this surface's page (or its bleed)? Cover pages only show part of the sheet.
+  // trim: only count the page itself, not its bleed (what survives trimming).
+  function onSurface(doc, s, it, { trim = false } = {}) {
+    if (!isCoverPage(s)) return true;
+    const o = surfaceOrigin(doc, s);
+    const b = trim ? 0 : doc.cover.bleed;
+    return it.x < o + doc.w + b && it.x + it.w > o - b;
   }
 
   /* ---------- surfaces ---------- */
-  // { kind: 'page', idx } | { kind: 'master', id, side: 'left'|'right' } | { kind: 'cover' }
+  // { kind: 'page', idx } | { kind: 'master', id, side: 'left'|'right' } | { kind: 'cover' } | { kind: 'cover', side: 'inside' }
   function surfaceItems(doc, s) {
     if (s.kind === 'page') return doc.pages[s.idx].items;
     if (s.kind === 'master') return master(doc, s.id)[s.side];
-    return doc.cover.items;
+    return isInside(s) ? doc.cover.inside.items : doc.cover.items;
   }
   function surfaceSize(doc, s) {
+    if (isCoverPage(s)) return { w: doc.w, h: doc.h, bleed: doc.cover.bleed };
     if (s.kind === 'cover') {
       const c = cover(doc);
       return { w: c.w, h: c.h, bleed: doc.cover.bleed };
@@ -162,18 +221,25 @@ const Model = (() => {
     return { w: doc.w, h: doc.h, bleed: doc.bleed };
   }
   const surfaceSide = (doc, s) => (s.kind === 'page' ? side(doc, s.idx) : s.kind === 'master' ? (doc.facing ? s.side : 'single') : 'single');
-  const sameSurface = (a, b) => a && b && a.kind === b.kind && a.idx === b.idx && a.id === b.id && a.side === b.side;
+  const sameSurface = (a, b) => a && b && a.kind === b.kind && a.idx === b.idx && a.id === b.id && a.side === b.side && a.part === b.part;
+  // Every surface that holds items, including a cover that's switched off (its items are kept,
+  // so their photos, fonts, swatches and threads still count). printedSurfaces() is what prints.
   function allSurfaces(doc) {
+    return [...printedSurfaces(doc).filter((s) => s.kind !== 'cover'), { kind: 'cover' }, { kind: 'cover', side: 'inside' }];
+  }
+  function printedSurfaces(doc) {
     const out = doc.pages.map((_, idx) => ({ kind: 'page', idx }));
     for (const m of doc.masters) {
       if (doc.facing) out.push({ kind: 'master', id: m.id, side: 'left' });
       out.push({ kind: 'master', id: m.id, side: 'right' });
     }
-    if (doc.cover.enabled) out.push({ kind: 'cover' });
+    out.push(...coverSurfaces(doc));
     return out;
   }
-  function findItem(doc, id) {
-    for (const s of allSurfaces(doc)) {
+  // prefer: the surface being looked at. A cover page shares its items with the rest of the
+  // cover, so a box found there is reported as being on that page.
+  function findItem(doc, id, prefer) {
+    for (const s of [...(prefer ? [prefer] : []), ...allSurfaces(doc)]) {
       const list = surfaceItems(doc, s);
       const i = list.findIndex((it) => it.id === id);
       if (i >= 0) return { item: list[i], list, index: i, surface: s };
@@ -249,6 +315,9 @@ const Model = (() => {
   // Older files and files from templates: fill in anything newer versions added.
   function normalise(doc) {
     doc.cover = { enabled: false, paper: 'kdp-white', perPage: 0.0572, spineExtra: 0, bleed: 3, items: [], ...(doc.cover || {}) };
+    doc.cover.inside = { enabled: false, items: [], ...(doc.cover.inside || {}) };
+    doc.cover.layout = doc.cover.layout === 'single' ? 'single' : 'spread';
+    doc.cover.order = doc.cover.order === 'reading' ? 'reading' : 'outside-first';
     doc.masters = doc.masters || [];
     doc.styles = doc.styles || [];
     doc.swatches = doc.swatches || SWATCHES();
@@ -260,8 +329,8 @@ const Model = (() => {
 
   return {
     PRESETS, PAPERS, DEFAULT_FONT, textStyle, newDoc, newPage, newItem, itemLabel, typeName, addPageNumbers,
-    spreads, side, pageNumber, margins, master, masterItems, cover, coverPages,
-    surfaceItems, surfaceSize, surfaceSide, sameSurface, allSurfaces, findItem,
+    spreads, side, pageNumber, margins, master, masterItems, cover, coverPages, isInside, coverSurfaces, surfaceName, isSingle, isCoverPage, surfaceOrigin, coverSurfaceFor, onSurface,
+    surfaceItems, surfaceSize, surfaceSide, sameSurface, allSurfaces, printedSurfaces, findItem,
     resolveColor, colorName, ink, styleOf, chainOf, usedAssets, pruneAssets, normalise,
   };
 })();

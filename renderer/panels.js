@@ -5,7 +5,7 @@ const Panels = (() => {
   const thumbs = new Map(); // surface key -> canvas
   const dirtyThumbs = new Set();
   let allThumbsDirty = true;
-  const skey = (s) => (s.kind === 'page' ? 'p' + S().doc.pages[s.idx]?.id : s.kind === 'master' ? `m${s.id}${s.side}` : 'cover');
+  const skey = (s) => (s.kind === 'page' ? 'p' + S().doc.pages[s.idx]?.id : s.kind === 'master' ? `m${s.id}${s.side}` : `cover${Model.isInside(s) ? '-inside' : ''}${s.part ? '-' + s.part : ''}`);
 
   function init() {
     $('#left-tabs').addEventListener('click', (e) => {
@@ -44,10 +44,12 @@ const Panels = (() => {
     else renderLayers();
   }
 
+  // 'inside' / 'outside' (or nothing), and optionally 'front' / 'back' for single cover pages.
+  const coverFromKey = (a, b) => ({ kind: 'cover', ...(a === 'inside' ? { side: 'inside' } : {}), ...(b ? { part: b } : {}) });
   function thumbFor(s) {
     const key = skey(s);
     if (allThumbsDirty || dirtyThumbs.has(key) || !thumbs.has(key)) {
-      const c = Render.thumb(S().doc, s, s.kind === 'cover' ? 200 : 76);
+      const c = Render.thumb(S().doc, s, Model.isCoverPage(s) ? 96 : s.kind === 'cover' ? 200 : 76);
       c.className = 'thumb-canvas';
       thumbs.set(key, c);
       dirtyThumbs.delete(key);
@@ -87,13 +89,28 @@ const Panels = (() => {
       html += `<div class="pp-head"><h4>Cover</h4><label class="switch"><input type="checkbox" data-act="toggle-cover" ${doc.cover.enabled ? 'checked' : ''}><span>Make a cover</span></label></div>`;
       if (doc.cover.enabled) {
         const c = Model.cover(doc);
-        html += `<div class="cover-row${surface.kind === 'cover' ? ' on' : ''}" data-cover="1"><div class="thumb-img" data-thumb="cover"></div><span class="muted">Back, spine ${c.spine.toFixed(1)} mm, front</span></div>`;
+        const inside = Model.isInside(surface);
+        const single = Model.isSingle(doc);
+        html += `<div class="seg seg-xs cover-layout" data-cover-layout><button data-v="spread" class="${single ? '' : 'on'}" title="Back, spine and front as one page">Spread</button><button data-v="single" class="${single ? 'on' : ''}" title="Front and back as separate pages">Single pages</button></div>`;
+        if (!single) {
+          html += `<div class="cover-row${surface.kind === 'cover' && !inside ? ' on' : ''}" data-cover="outside"><div class="thumb-img" data-thumb="cover"></div><span class="muted">Back, spine ${c.spine.toFixed(1)} mm, front</span></div>`;
+          html += `<label class="switch cover-inside-switch"><input type="checkbox" data-act="toggle-inside" ${doc.cover.inside.enabled ? 'checked' : ''}><span>Print the inside too</span></label>`;
+          if (doc.cover.inside.enabled) html += `<div class="cover-row${inside ? ' on' : ''}" data-cover="inside"><div class="thumb-img" data-thumb="cover:inside"></div><span class="muted">Inside front, inside back</span></div>`;
+        } else {
+          // One thumbnail per cover page, in the order they export.
+          html += `<label class="switch cover-inside-switch"><input type="checkbox" data-act="toggle-inside" ${doc.cover.inside.enabled ? 'checked' : ''}><span>Print the inside too</span></label><div class="cover-pages">`;
+          for (const s of Model.coverSurfaces(doc)) {
+            const key = `${Model.isInside(s) ? 'inside' : 'outside'}:${s.part}`;
+            html += `<div class="cover-row cover-page${Model.sameSurface(s, surface) ? ' on' : ''}" data-cover="${key}"><div class="thumb-img" data-thumb="cover:${key}"></div><span class="muted">${esc(Model.surfaceName(doc, s))}</span></div>`;
+          }
+          html += '</div>';
+        }
       }
     }
     host.innerHTML = html;
     for (const el of $$('[data-thumb]', host)) {
       const [kind, a, b] = el.dataset.thumb.split(':');
-      const s = kind === 'page' ? { kind, idx: +a } : kind === 'master' ? { kind, id: a, side: b } : { kind: 'cover' };
+      const s = kind === 'page' ? { kind, idx: +a } : kind === 'master' ? { kind, id: a, side: b } : coverFromKey(a, b);
       el.appendChild(thumbFor(s));
     }
     allThumbsDirty = false;
@@ -102,6 +119,8 @@ const Panels = (() => {
 
   function onLeftClick(e) {
     const { doc } = S();
+    const lay = e.target.closest('[data-cover-layout] [data-v]');
+    if (lay) return App.setCoverLayout(lay.dataset.v);
     const act = e.target.closest('[data-act]');
     if (act) {
       const a = act.dataset.act;
@@ -116,6 +135,11 @@ const Panels = (() => {
         doc.cover.enabled = act.checked;
         if (!act.checked && S().surface.kind === 'cover') App.goTo({ kind: 'page', idx: 0 });
       }, { thumbs: 'all' });
+      if (a === 'toggle-inside') return App.change(act.checked ? 'Add inside cover' : 'Remove inside cover', () => {
+        // Switching it off keeps what's on it, ready if it's switched back on.
+        doc.cover.inside.enabled = act.checked;
+        App.goTo(act.checked ? { kind: 'cover', side: 'inside' } : { kind: 'cover' });
+      }, { thumbs: 'all' });
       return;
     }
     const t = e.target.closest('[data-page]');
@@ -125,7 +149,11 @@ const Panels = (() => {
       const side = e.target.closest('.thumb') && doc.facing && e.target.closest('.thumb') === $$('.thumb', m)[0] ? 'left' : 'right';
       return App.goTo({ kind: 'master', id: m.dataset.master, side });
     }
-    if (e.target.closest('[data-cover]')) return App.goTo({ kind: 'cover' });
+    const cv = e.target.closest('[data-cover]');
+    if (cv) {
+      const [a, b] = cv.dataset.cover.split(':');
+      return App.goTo(coverFromKey(a, b));
+    }
     const row = e.target.closest('[data-layer]');
     if (row) {
       const id = row.dataset.layer;
@@ -203,7 +231,7 @@ const Panels = (() => {
   const ICON = { text: 'T', image: '▣', rect: '■', ellipse: '●', line: '╱' };
   function renderLayers() {
     const { doc, surface, sel } = S();
-    const items = Model.surfaceItems(doc, surface);
+    const items = Model.surfaceItems(doc, surface).filter((it) => Model.onSurface(doc, surface, it));
     let html = `<div class="pp-head"><h4>Layers</h4><span class="muted">Top first. Drag to reorder.</span></div><div class="layers">`;
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i];
@@ -399,12 +427,27 @@ const Panels = (() => {
     const { doc } = S();
     const c = Model.cover(doc);
     const paper = Model.PAPERS.find((p) => p.id === doc.cover.paper) || Model.PAPERS[Model.PAPERS.length - 1];
+    const single = Model.isSingle(doc);
+    const inside = Model.isInside(S().surface);
     return `<section><h5>Cover</h5>
       <p class="big-num">${c.spine.toFixed(2)} mm <span class="muted">spine</span></p>
       <p class="hint">Worked out from ${Model.coverPages(doc)} pages × ${doc.cover.perPage} mm per page${doc.cover.spineExtra ? ` + ${doc.cover.spineExtra} mm` : ''}. Check the number with your printer before you send it.</p>
       <div class="field field-wide"><span>Paper</span><select class="input" data-paper="1">${Model.PAPERS.map((p) => `<option value="${p.id}" ${p.id === paper.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
       <div class="grid2">${num('Per page', 'c.perPage', doc.cover.perPage, 'mm')}${num('Extra', 'c.spineExtra', doc.cover.spineExtra || 0, 'mm')}${len('Bleed', 'c.bleed', doc.cover.bleed)}</div>
-      <p class="hint">Whole cover ${Units.label(c.w, U(), doc.dpi)} × ${Units.label(c.h, U(), doc.dpi)} plus bleed. Keep text 6 mm inside the cyan lines, and spine text inside the spine.</p></section>`;
+      <p class="hint">Whole cover ${Units.label(c.w, U(), doc.dpi)} × ${Units.label(c.h, U(), doc.dpi)} plus bleed. Keep text 6 mm inside the violet lines${single ? '' : ', and spine text inside the spine'}.</p></section>
+      <section><h5>Layout</h5>
+      <div class="field field-wide"><span>Cover as</span><select class="input" data-cover-layout-select>
+        <option value="spread" ${single ? '' : 'selected'}>One spread: back, spine, front</option>
+        <option value="single" ${single ? 'selected' : ''}>Single pages: front and back</option></select></div>
+      ${single ? `${doc.cover.inside.enabled ? `<div class="field field-wide"><span>Page order</span><select class="input" data-cover-order>
+        <option value="outside-first" ${doc.cover.order !== 'reading' ? 'selected' : ''}>Front, back, inside front, inside back</option>
+        <option value="reading" ${doc.cover.order === 'reading' ? 'selected' : ''}>Front, inside front, inside back, back</option></select></div>` : ''}
+      <p class="hint">The front and back are separate pages, and export as separate pages of the cover PDF in this order. The spine isn't shown and doesn't print. Anything on it, and the part of a picture that wraps round it, comes back when you switch to one spread.</p>`
+        : '<p class="hint">Switch to single pages to work on the front and back on their own, and to export them as separate pages. Nothing is lost when you switch back.</p>'}</section>
+      ${inside ? `<section><h5>Inside cover</h5>
+      <p class="hint">${single ? 'The inside front and inside back covers, the backs of the front and back.' : 'The back of the cover sheet: the inside front cover on the left, the inside back cover on the right.'} Leave either side empty if you only need one.</p>
+      <p class="hint">The spine and ${((c.glue[1] - c.glue[0] - c.spine) / 2).toFixed(0)} mm either side of it are glued to the pages, so keep ${single ? 'the strip along the spine edge' : 'that strip'} clear. Not every printer prints inside covers (Amazon KDP doesn't), so check with yours first.</p>
+      ${single ? '' : '<p class="hint">It exports as page 2 of the cover PDF.</p>'}</section>` : ''}`;
   }
 
   /* ---------- applying field changes ---------- */
@@ -506,6 +549,8 @@ const Panels = (() => {
       }, { thumbs: 'all' });
     }
     if (el.dataset.pagemaster !== undefined) return App.change('Apply master', () => (doc.pages[S().surface.idx].master = el.value || null), { thumbs: 'all' });
+    if (el.dataset.coverLayoutSelect !== undefined) return App.setCoverLayout(el.value);
+    if (el.dataset.coverOrder !== undefined) return App.change('Cover page order', () => (doc.cover.order = el.value), { thumbs: 'all' });
     if (el.dataset.paper) {
       const p = Model.PAPERS.find((x) => x.id === el.value);
       return App.change('Paper', () => {

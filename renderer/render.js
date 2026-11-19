@@ -62,7 +62,8 @@ const Render = (() => {
   function itemsOf(doc, surface) {
     const own = Model.surfaceItems(doc, surface);
     if (surface.kind === 'page') return [...Model.masterItems(doc, surface.idx).map((it) => ({ it, master: true })), ...own.map((it) => ({ it }))];
-    return own.map((it) => ({ it }));
+    // A cover page shows only the boxes on its part of the cover sheet.
+    return own.filter((it) => Model.onSurface(doc, surface, it)).map((it) => ({ it }));
   }
   const ctxFor = (doc, surface) => (surface.kind === 'page' ? { page: Model.pageNumber(doc, surface.idx) } : { page: null });
 
@@ -77,6 +78,7 @@ const Render = (() => {
     ctx.beginPath();
     ctx.rect(-b * scale, -b * scale, (sz.w + 2 * b) * scale, (sz.h + 2 * b) * scale);
     ctx.clip();
+    ctx.translate(-Model.surfaceOrigin(doc, surface) * scale, 0);
     const pc = ctxFor(doc, surface);
     for (const { it } of itemsOf(doc, surface)) if (!it.hidden) drawItem(ctx, doc, it, scale, pc);
     ctx.restore();

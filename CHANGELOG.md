@@ -19,6 +19,21 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.2 · 19 Nov 2026
+A menu bar like other Windows apps, inside covers, and covers as single pages.
+
+### New
+- A menu bar along the top (File, Edit, View, Insert, Type, Object, Page, Help) with the shortcuts shown. Alt+F opens File, Alt on its own highlights the bar, and the arrow keys move around.
+- Print the inside of the cover too (Pages, Cover, Print the inside too): the inside front cover and inside back cover, with the glue area down the spine marked.
+- Covers can be single pages: the front and back (and the inside front and back) as separate pages, to work on and to export (Pages, Cover, Single pages). Switch back to one spread at any time and nothing is lost.
+- Choose the order of single cover pages in the cover PDF (Properties, Layout, Page order).
+- Full screen with F11, and Settings with Ctrl+, from anywhere.
+- Check warns when something on the inside cover is in the glue area, and when something is only on the spine while the cover is single pages.
+
+### Fixed
+- Double-clicking a text box opens it for editing again, so you can change or add to text after leaving it.
+- Photos on a cover that's switched off are kept when you save.
+
 ## 0.1.1 · 19 Nov 2026
 The close button works, and Endpaper opens with a splash screen.
 

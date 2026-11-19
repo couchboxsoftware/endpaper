@@ -2,7 +2,7 @@
 
 Print-ready designs and books, in CMYK. A Windows desktop app (Electron), built the same way as Couchbox.
 
-Start it with **Start Endpaper.cmd**, or `npm start`.
+Start it with **Start Endpaper.cmd**, or `npm start`. Run this way it is the test version: it shows "Test version" in the title bar and keeps its own settings, so it runs alongside the installed Endpaper.
 
 ## What's where
 
@@ -17,6 +17,8 @@ Start it with **Start Endpaper.cmd**, or `npm start`.
 - `renderer/brand.js`: the Endpaper logo and colours. `tools/render-icon.js` makes `build/icon.png`.
 - `CHANGELOG.md`: shown in What's new, the update banner and the GitHub release notes. Same writing rules as Couchbox.
 - `src/main/updater.js` + `renderer/updates.js`: updates from GitHub Releases.
+- `renderer/menubar.js`: the File, Edit, View… menu bar in the title bar (the menus themselves are in `renderer/app.js`).
+- `renderer/splash.html` + `renderer/splash.js`: the open-book splash screen.
 - `tools/release.js`: builds the installer and publishes a release.
 
 ## Updates

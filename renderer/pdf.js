@@ -64,6 +64,9 @@ const Pdf = (() => {
       push(op.pushGraphicsState(), op.concatTransformationMatrix(k, 0, 0, -k, ext.l * k, H - ext.t * k));
       // Nothing prints outside the bleed.
       push(op.pushGraphicsState(), op.rectangle(-bl.l, -bl.t, sz.w + bl.l + bl.r, sz.h + bl.t + bl.b), op.clip(), op.endPath());
+      // A cover page is a window onto the cover sheet: shift the sheet so its part sits on the page.
+      const org = Model.surfaceOrigin(doc, s);
+      if (org) push(op.concatTransformationMatrix(1, 0, 0, 1, -org, 0));
       const pc = Render.ctxFor(doc, s);
       for (const { it } of Render.itemsOf(doc, s)) {
         if (it.hidden) continue;
@@ -197,7 +200,7 @@ const Pdf = (() => {
             push(op.moveTo(x + dx * off, y), op.lineTo(x + dx * (off + len), y), op.stroke());
             push(op.moveTo(x, y + dy * off), op.lineTo(x, y + dy * (off + len)), op.stroke());
           }
-        if (s.kind === 'cover') {
+        if (s.kind === 'cover' && !Model.isCoverPage(s)) {
           // Spine fold marks, top and bottom.
           const c = Model.cover(doc);
           for (const x of c.spineX) {

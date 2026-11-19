@@ -92,7 +92,8 @@ const App = (() => {
     Layout.invalidate();
     if (opts.thumbs === 'all' || S.surface.kind === 'master' || opts.thumbsShared) Panels.invalidateThumbs();
     else for (const s of Editor.spreadSurfaces(S.doc, S.surface)) Panels.invalidateThumbs(s);
-    if (S.surface.kind === 'page' && S.doc.cover.enabled) Panels.invalidateThumbs({ kind: 'cover' });
+    // Covers can show {pages} and {title}, so page changes redraw their thumbnails too.
+    if (S.surface.kind === 'page') for (const s of Model.coverSurfaces(S.doc)) Panels.invalidateThumbs(s);
     render();
   }
   function markDirty() {
@@ -106,6 +107,11 @@ const App = (() => {
     if (s.kind === 'master' && !Model.master(S.doc, s.id)) S.surface = { kind: 'page', idx: 0 };
     if (s.kind === 'master' && !S.doc.facing) s.side = 'right';
     if (s.kind === 'cover' && !S.doc.cover.enabled) S.surface = { kind: 'page', idx: 0 };
+    else if (s.kind === 'cover') {
+      // Spread or single pages: show the cover the way it's laid out (Model.coverSurfaceFor).
+      if (Model.isInside(s) && !S.doc.cover.inside.enabled) S.surface = { kind: 'cover', ...(s.part ? { part: s.part } : {}) };
+      S.surface = Model.coverSurfaceFor(S.doc, S.surface);
+    }
   }
 
   function render() {
@@ -129,6 +135,7 @@ const App = (() => {
     if (S.leftTab === 'layers') Panels.renderLeft();
   }
   function goTo(surface, { keepSel = false } = {}) {
+    if (S.doc && surface.kind === 'cover') surface = Model.coverSurfaceFor(S.doc, surface);
     const same = Model.sameSurface(surface, S.surface);
     const sameSpread = Editor.spreadSurfaces(S.doc, S.surface).some((s) => Model.sameSurface(s, surface));
     S.surface = { ...surface };
@@ -195,7 +202,7 @@ const App = (() => {
         const sc = Math.min(maxW / a.w, maxH / a.h, 25.4 / 150);
         const w = a.w * sc, h = a.h * sc;
         const it = Model.newItem('image', 0, 0, w, h, S.doc);
-        it.x = (at ? at.x : sz.w / 2) - w / 2 + n * 6;
+        it.x = (at ? at.x : Model.surfaceOrigin(S.doc, S.surface) + sz.w / 2) - w / 2 + n * 6;
         it.y = (at ? at.y : sz.h / 2) - h / 2 + n * 6;
         it.asset = id;
         it.name = f.name.replace(/\.[^.]+$/, '');
@@ -244,7 +251,8 @@ const App = (() => {
     if (name === 'copy' || name === 'cut') {
       const assets = {};
       for (const it of sel) if (it.asset) assets[it.asset] = S.doc.assets[it.asset];
-      S.clip = { items: clone(sel), assets };
+      // org: where the copied page starts, so a paste onto a cover page lands in the same place on it.
+      S.clip = { items: clone(sel), assets, org: Model.surfaceOrigin(S.doc, S.surface) };
       if (name === 'copy') return status(`Copied ${sel.length} item${sel.length === 1 ? '' : 's'}`);
     }
     if (name === 'delete' || name === 'cut') {
@@ -290,13 +298,15 @@ const App = (() => {
     change('Paste', () => {
       Object.assign(S.doc.assets, S.clip.assets);
       const list = Model.surfaceItems(S.doc, S.surface);
-      const copies = S.clip.items.map((it) => ({ ...clone(it), id: uid('i'), next: null }));
+      const shift = Model.surfaceOrigin(S.doc, S.surface) - (S.clip.org || 0);
+      const copies = S.clip.items.map((it) => ({ ...clone(it), id: uid('i'), next: null, x: it.x + shift }));
       // Pasting onto the same spot offsets it so you can see the copy.
       const clash = copies.some((c) => list.some((x) => Math.abs(x.x - c.x) < 0.5 && Math.abs(x.y - c.y) < 0.5));
       if (clash) copies.forEach((c) => ((c.x += 5), (c.y += 5)));
       list.push(...copies);
       S.sel = new Set(copies.map((c) => c.id));
       S.clip.items = clone(copies);
+      S.clip.org = Model.surfaceOrigin(S.doc, S.surface);
     });
   }
   function nudge(dx, dy) {
@@ -311,7 +321,8 @@ const App = (() => {
     const sel = selectedList();
     if (!sel.length) return;
     const sz = Model.surfaceSize(S.doc, S.surface);
-    const box = sel.length === 1 ? { x0: 0, y0: 0, x1: sz.w, y1: sz.h } : { x0: Math.min(...sel.map((i) => i.x)), y0: Math.min(...sel.map((i) => i.y)), x1: Math.max(...sel.map((i) => i.x + i.w)), y1: Math.max(...sel.map((i) => i.y + i.h)) };
+    const o = Model.surfaceOrigin(S.doc, S.surface);
+    const box = sel.length === 1 ? { x0: o, y0: 0, x1: o + sz.w, y1: sz.h } : { x0: Math.min(...sel.map((i) => i.x)), y0: Math.min(...sel.map((i) => i.y)), x1: Math.max(...sel.map((i) => i.x + i.w)), y1: Math.max(...sel.map((i) => i.y + i.h)) };
     change('Align', () => {
       if (mode === 'dist-h' || mode === 'dist-v') {
         const h = mode === 'dist-h';
@@ -571,17 +582,21 @@ const App = (() => {
     const profiles = await ep.icc.list();
     const curPage = S.surface.kind === 'page' ? S.surface.idx : 0;
     const isBook = doc.facing && doc.cover.enabled;
+    const coverS = Model.coverSurfaces(doc);
+    const withInside = doc.cover.enabled && doc.cover.inside.enabled;
+    const singleCover = doc.cover.enabled && Model.isSingle(doc);
+    const nameOf = (s) => Model.surfaceName(doc, s).replace(/^[A-Z]/, (c) => c.toLowerCase()); // 'page 3', 'cover', 'inside cover'
     const m = openModal({
       title: 'Export',
       wide: true,
       body: `<div class="export">
         <div class="ex-col">
           <div class="field field-wide"><span>Export</span><select class="input" data-x="what">
-            ${isBook ? '<option value="book">Book: inside pages and cover (2 PDFs)</option>' : ''}
+            ${isBook ? `<option value="book">Book: inside pages and cover${withInside ? ' with its inside' : ''} (2 PDFs)</option>` : ''}
             <option value="all">All pages</option>
             <option value="current">This page (${Model.pageNumber(doc, curPage)})</option>
             <option value="range">Pages…</option>
-            ${doc.cover.enabled ? '<option value="cover">Cover only</option>' : ''}
+            ${doc.cover.enabled ? `<option value="cover">${singleCover ? `Cover pages only (${coverS.length})` : withInside ? 'Cover and inside cover' : 'Cover only'}</option>` : ''}
           </select></div>
           <div class="field field-wide" data-show="range" hidden><span>Pages</span><input class="input" data-x="range" placeholder="e.g. 1-4, 7"></div>
           <div class="field field-wide"><span>As</span><div class="seg" data-xseg="format"><button class="on" data-v="pdf">Print PDF</button><button data-v="png">PNG</button><button data-v="jpg">JPG</button></div></div>
@@ -618,11 +633,13 @@ const App = (() => {
       if (format === 'pdf') txt = `PDF/X-4 · CMYK · photos converted with ${q('profile')?.selectedOptions[0]?.text || 'no profile'} · fonts embedded`;
       else {
         const dpi = +q('dpi').value || 300;
-        const sz = what === 'cover' ? Model.cover(doc) : doc;
+        const sz = what === 'cover' && !singleCover ? Model.cover(doc) : doc;
         const b = q('ibleed').checked ? doc.bleed * 2 : 0;
         txt = `${Math.round(((sz.w + b) / 25.4) * dpi)} × ${Math.round(((sz.h + b) / 25.4) * dpi)} px each`;
       }
       if (what === 'book') txt += `<br>Spine ${Model.cover(doc).spine.toFixed(2)} mm for ${Model.coverPages(doc)} pages`;
+      if (singleCover && (what === 'book' || what === 'cover')) txt += `<br>${format === 'pdf' ? `The cover PDF has ${coverS.length} pages` : `${coverS.length} cover images`}: ${coverS.map((s) => nameOf(s).replace(/ cover$/, '')).join(', ')}`;
+      else if (withInside && (what === 'book' || what === 'cover')) txt += format === 'pdf' ? '<br>The cover PDF has 2 pages: the outside, then the inside' : '<br>The cover and the inside cover as separate images';
       $('.ex-summary', el).innerHTML = `<p class="hint">${txt}</p>`;
     };
     refresh();
@@ -665,12 +682,12 @@ const App = (() => {
           const jobs = [];
           if (what === 'book') {
             jobs.push({ surfaces: pages, name: `${doc.name} - inside.pdf`, noSpineBleed: q('spine')?.checked, title: `${doc.name} (inside)` });
-            jobs.push({ surfaces: [{ kind: 'cover' }], name: `${doc.name} - cover.pdf`, title: `${doc.name} (cover)` });
-          } else if (what === 'cover') jobs.push({ surfaces: [{ kind: 'cover' }], name: `${doc.name} - cover.pdf`, title: `${doc.name} (cover)` });
+            jobs.push({ surfaces: coverS, name: `${doc.name} - cover.pdf`, title: `${doc.name} (cover)` });
+          } else if (what === 'cover') jobs.push({ surfaces: coverS, name: `${doc.name} - cover.pdf`, title: `${doc.name} (cover)` });
           else jobs.push({ surfaces: pages, name: `${doc.name}.pdf`, noSpineBleed: q('spine')?.checked, title: doc.name });
           const saved = [];
           for (const [ji, job] of jobs.entries()) {
-            const bytes = await Pdf.build(doc, { ...common, ...job }, (f, s) => prog((ji + f) / jobs.length, s ? `Making ${job.name}: ${s.kind === 'cover' ? 'cover' : 'page ' + Model.pageNumber(doc, s.idx)}…` : 'Finishing…'));
+            const bytes = await Pdf.build(doc, { ...common, ...job }, (f, s) => prog((ji + f) / jobs.length, s ? `Making ${job.name}: ${nameOf(s)}…` : 'Finishing…'));
             const p = await ep.file.export({ bytes, name: job.name, ext: 'pdf', label: 'PDF' });
             if (p) saved.push(p);
           }
@@ -678,12 +695,12 @@ const App = (() => {
           if (saved.length) toast(`Exported ${saved.length === 1 ? saved[0].split(/[\\/]/).pop() : saved.length + ' PDFs'}.`, { action: 'Show in folder', onAction: () => ep.app.reveal(saved[0]), ms: 8000 });
         } else {
           const dpi = clamp(+q('dpi').value || 300, 30, 1200);
-          const surfaces = what === 'cover' ? [{ kind: 'cover' }] : pages;
+          const surfaces = what === 'cover' ? coverS : pages;
           const files = [];
           for (const [i, s] of surfaces.entries()) {
-            prog(i / surfaces.length, `Drawing ${s.kind === 'cover' ? 'cover' : 'page ' + Model.pageNumber(doc, s.idx)}…`);
+            prog(i / surfaces.length, `Drawing ${nameOf(s)}…`);
             await sleep(0);
-            files.push({ name: `${doc.name}${surfaces.length > 1 ? ` - ${s.kind === 'cover' ? 'cover' : 'page ' + Model.pageNumber(doc, s.idx)}` : ''}.${format}`, bytes: await raster(doc, s, dpi, q('ibleed').checked, format) });
+            files.push({ name: `${doc.name}${surfaces.length > 1 ? ` - ${nameOf(s)}` : ''}.${format}`, bytes: await raster(doc, s, dpi, q('ibleed').checked, format) });
           }
           prog(1, 'Saving…');
           let p;
@@ -1049,7 +1066,7 @@ const App = (() => {
     $('#btn-undo').disabled = !history.undo.length;
     $('#btn-redo').disabled = !history.redo.length;
     const s = S.surface;
-    $('#st-page').textContent = s.kind === 'page' ? `Page ${Model.pageNumber(S.doc, s.idx)} of ${S.doc.pages.length}` : s.kind === 'cover' ? 'Cover' : `Master: ${Model.master(S.doc, s.id)?.name}`;
+    $('#st-page').textContent = s.kind === 'page' ? `Page ${Model.pageNumber(S.doc, s.idx)} of ${S.doc.pages.length}` : s.kind === 'cover' ? Model.surfaceName(S.doc, s) : `Master: ${Model.master(S.doc, s.id)?.name}`;
     updateStatusUnits();
   }
   function updateStatusUnits() {
@@ -1156,6 +1173,7 @@ const App = (() => {
     }
     if (ctrl && k.toLowerCase() === 'o') return e.preventDefault(), openFile();
     if (ctrl && k.toLowerCase() === 'n') return e.preventDefault(), newDialog('print');
+    if (ctrl && k === ',') return e.preventDefault(), openSettings();
     if ($('.modal-overlay')) return;
     if (!S.doc || isTyping()) return;
     if (ctrl && k.toLowerCase() === 'e') return e.preventDefault(), openExport();
@@ -1203,15 +1221,226 @@ const App = (() => {
     if (tools[k.toLowerCase()]) setTool(tools[k.toLowerCase()]);
   }
 
+  // Cover as one spread, or as single pages (front and back separately). Nothing is moved:
+  // single pages are windows onto the same cover, so switching back loses nothing.
+  function setCoverLayout(v) {
+    if (!S.doc || S.doc.cover.layout === v) return;
+    change(v === 'single' ? 'Cover as single pages' : 'Cover as a spread', () => {
+      S.doc.cover.layout = v;
+      if (S.surface.kind === 'cover') S.surface = Model.coverSurfaceFor(S.doc, S.surface);
+    }, { thumbs: 'all' });
+    if (S.surface.kind === 'cover') goTo(Model.coverSurfaceFor(S.doc, S.surface));
+  }
+
+  /* ================= the menu bar ================= */
+  // Built fresh each time a menu opens, so what's greyed out or ticked is always current.
+  function textAlign(a) {
+    const items = selectedList().filter((it) => it.type === 'text');
+    if (!items.length) return;
+    change('Align text', () => {
+      for (const it of items) {
+        if (it.styleId && S.doc.styles.some((s) => s.id === it.styleId)) it.styleOverride = { ...(it.styleOverride || {}), align: a };
+        else it.style = { ...Model.styleOf(S.doc, it), align: a };
+      }
+    });
+  }
+  function about() {
+    const m = openModal({
+      title: 'About Endpaper',
+      body: `<div class="about"><div class="brand big">${BRAND.icon}${BRAND.wordmark}</div>
+        <p>Version ${esc(S.version)}</p><p class="muted">Print-ready designs and books, in CMYK. Made by Couchbox Software.</p>
+        <div class="modal-actions"><button class="btn btn-ghost" data-a="notes">Release notes</button><button class="btn btn-accent" data-a="ok">OK</button></div></div>`,
+    });
+    m.el.addEventListener('click', (e) => {
+      const a = e.target.closest('[data-a]')?.dataset.a;
+      if (a === 'notes') ep.update.releases();
+      if (a) m.close();
+    });
+  }
+  function menus() {
+    const doc = S.doc;
+    const sel = doc ? selectedList() : [];
+    const text = sel.filter((it) => it.type === 'text');
+    const noDoc = !doc;
+    const noSel = !sel.length;
+    const onPage = doc && S.surface.kind === 'page';
+    const book = doc && (doc.facing || doc.kind === 'book');
+    const u = unit();
+    const zoom = (f) => () => Editor.zoomAt(S.zoom * f);
+    const tool = (t) => () => setTool(t);
+    const story = text.length === 1 ? text[0] : null;
+    const undoTop = doc && history.undo[history.undo.length - 1];
+    const redoTop = doc && history.redo[history.redo.length - 1];
+    return [
+      {
+        title: '&File',
+        items: [
+          { label: '&New design…', key: 'Ctrl+N', run: () => newDialog('print') },
+          { label: 'New &book…', run: () => newDialog('book') },
+          { label: '&Open…', key: 'Ctrl+O', run: () => openFile() },
+          {
+            label: 'Open &recent',
+            items: async () => {
+              const r = await ep.recent.list();
+              return r.slice(0, 10).map((x, i) => ({ label: `${i < 9 ? '&' + (i + 1) + '  ' : ''}${x.name}`, run: () => openFile(x.path) }));
+            },
+          },
+          '-',
+          { label: '&Save', key: 'Ctrl+S', disabled: noDoc, run: () => save() },
+          { label: 'Save &as…', key: 'Ctrl+Shift+S', disabled: noDoc, run: () => save(true) },
+          { label: 'Save as &template…', disabled: noDoc, run: () => saveTemplate() },
+          '-',
+          { label: '&Export…', key: 'Ctrl+E', disabled: noDoc, run: () => openExport() },
+          { label: 'Show in &folder', disabled: !S.filePath, run: () => ep.app.reveal(S.filePath) },
+          '-',
+          { label: 'Se&ttings…', key: 'Ctrl+,', run: () => openSettings() },
+          '-',
+          { label: '&Close design', key: 'Ctrl+W', disabled: noDoc, run: () => closeDoc() },
+          { label: 'E&xit', key: 'Alt+F4', run: () => ep.app.quit() },
+        ],
+      },
+      {
+        title: '&Edit',
+        items: [
+          { label: `&Undo${undoTop ? ' ' + undoTop.label.toLowerCase() : ''}`, key: 'Ctrl+Z', disabled: noDoc || !undoTop, run: () => history.doUndo() },
+          { label: `&Redo${redoTop ? ' ' + redoTop.label.toLowerCase() : ''}`, key: 'Ctrl+Y', disabled: noDoc || !redoTop, run: () => history.doRedo() },
+          '-',
+          { label: 'Cu&t', key: 'Ctrl+X', disabled: noSel, run: () => cmd('cut') },
+          { label: '&Copy', key: 'Ctrl+C', disabled: noSel, run: () => cmd('copy') },
+          { label: '&Paste', key: 'Ctrl+V', disabled: noDoc || !S.clip, run: () => paste() },
+          { label: '&Duplicate', key: 'Ctrl+D', disabled: noSel, run: () => cmd('duplicate') },
+          { label: 'De&lete', key: 'Delete', disabled: noSel, run: () => cmd('delete') },
+          '-',
+          { label: 'Select &all', key: 'Ctrl+A', disabled: noDoc, run: () => cmd('selectAll') },
+        ],
+      },
+      {
+        title: '&View',
+        items: [
+          { label: 'Zoom &in', key: 'Ctrl+=', disabled: noDoc, run: zoom(1.25) },
+          { label: 'Zoom &out', key: 'Ctrl+-', disabled: noDoc, run: zoom(1 / 1.25) },
+          { label: '&Fit on screen', key: 'Ctrl+0', disabled: noDoc, run: () => Editor.fit() },
+          { label: '&Actual size', key: 'Ctrl+1', disabled: noDoc, run: () => Editor.zoomAt(96 / 25.4) },
+          '-',
+          {
+            label: '&Units',
+            items: [
+              { label: '&Millimetres (mm)', checked: u === 'mm', run: () => applySetting({ units: 'mm' }) },
+              { label: '&Centimetres (cm)', checked: u === 'cm', run: () => applySetting({ units: 'cm' }) },
+              { label: '&Pixels (px)', checked: u === 'px', run: () => applySetting({ units: 'px' }) },
+            ],
+          },
+          { label: 'Bleed and margin &guides', key: 'Ctrl+;', checked: S.settings.showGuides !== false, run: () => applySetting({ showGuides: S.settings.showGuides === false }) },
+          '-',
+          { label: 'Full &screen', key: 'F11', checked: document.body.classList.contains('is-fullscreen'), run: () => ep.app.fullScreen() },
+        ],
+      },
+      {
+        title: '&Insert',
+        items: [
+          { label: '&Text box', key: 'T', disabled: noDoc, run: tool('text') },
+          { label: '&Photo frame', key: 'P', disabled: noDoc, run: tool('image') },
+          { label: 'P&lace photos…', disabled: noDoc, run: async () => { const f = await ep.image.pick(true); if (f.length) placePhotos(f); } },
+          '-',
+          { label: '&Rectangle', key: 'R', disabled: noDoc, run: tool('rect') },
+          { label: '&Ellipse', key: 'E', disabled: noDoc, run: tool('ellipse') },
+          { label: 'L&ine', key: 'L', disabled: noDoc, run: tool('line') },
+        ],
+      },
+      {
+        title: '&Type',
+        items: [
+          {
+            label: '&Align text',
+            disabled: !text.length,
+            items: [['&Left', 'left'], ['&Centre', 'center'], ['&Right', 'right'], ['&Justified', 'justify']].map(([l, a]) => ({ label: l, checked: text.length && text.every((it) => Model.styleOf(doc, it).align === a), run: () => textAlign(a) })),
+          },
+          { label: 'Edit &story…', disabled: !story, run: () => Story.open(story) },
+          '-',
+          { label: '&New text style…', disabled: noDoc, run: () => StyleEditor.open(null) },
+          { label: 'Add &fonts…', run: async () => { const n = await ep.fonts.add(); if (n) { await Fonts.refresh(); toast(`Added ${n} font${n === 1 ? '' : 's'}.`); render(); } } },
+        ],
+      },
+      {
+        title: '&Object',
+        items: [
+          { label: 'Bring to &front', key: 'Ctrl+Shift+]', disabled: noSel, run: () => cmd('front') },
+          { label: 'Bring &forward', key: 'Ctrl+]', disabled: noSel, run: () => cmd('forward') },
+          { label: 'Send &backward', key: 'Ctrl+[', disabled: noSel, run: () => cmd('backward') },
+          { label: 'Send to bac&k', key: 'Ctrl+Shift+[', disabled: noSel, run: () => cmd('back') },
+          '-',
+          {
+            label: '&Align',
+            disabled: noSel,
+            items: [
+              { label: '&Left edges', run: () => align('left') },
+              { label: '&Centres', run: () => align('hcenter') },
+              { label: '&Right edges', run: () => align('right') },
+              '-',
+              { label: '&Top edges', run: () => align('top') },
+              { label: '&Middles', run: () => align('vcenter') },
+              { label: '&Bottom edges', run: () => align('bottom') },
+              '-',
+              { label: 'Space out &across', disabled: sel.length < 3, run: () => align('dist-h') },
+              { label: 'Space out &down', disabled: sel.length < 3, run: () => align('dist-v') },
+            ],
+          },
+          '-',
+          { label: '&Lock or unlock', key: 'Ctrl+L', disabled: noSel, run: () => cmd('lock') },
+        ],
+      },
+      {
+        title: '&Page',
+        items: [
+          { label: '&Add page after', disabled: noDoc, run: () => pageOp('add-after') },
+          { label: 'Add page &before', disabled: !onPage, run: () => pageOp('add-before') },
+          { label: '&Duplicate page', disabled: !onPage, run: () => pageOp('duplicate') },
+          { label: 'De&lete page', disabled: !onPage || doc.pages.length < 2, run: () => pageOp('delete') },
+          '-',
+          { label: 'Move page &earlier', disabled: !onPage, run: () => pageOp('earlier') },
+          { label: 'Move page la&ter', disabled: !onPage, run: () => pageOp('later') },
+          '-',
+          { label: 'Ne&w master', disabled: noDoc, run: () => change('New master', () => { const id = uid('m'); doc.masters.push({ id, name: `${String.fromCharCode(65 + doc.masters.length)}-Master`, left: [], right: [] }); goTo({ kind: 'master', id, side: 'right' }); }, { thumbs: 'all' }) },
+          '-',
+          { label: '&Cover', disabled: !book, checked: book && doc.cover.enabled, run: () => change(doc.cover.enabled ? 'Remove cover' : 'Add cover', () => { doc.cover.enabled = !doc.cover.enabled; goTo(doc.cover.enabled ? { kind: 'cover' } : { kind: 'page', idx: 0 }); }, { thumbs: 'all' }) },
+          { label: '&Inside cover', disabled: !book || !doc.cover.enabled, checked: book && doc.cover.enabled && doc.cover.inside.enabled, run: () => change(doc.cover.inside.enabled ? 'Remove inside cover' : 'Add inside cover', () => { doc.cover.inside.enabled = !doc.cover.inside.enabled; goTo(doc.cover.inside.enabled ? { kind: 'cover', side: 'inside' } : { kind: 'cover' }); }, { thumbs: 'all' }) },
+          {
+            label: 'Cover &layout',
+            disabled: !book || !doc.cover.enabled,
+            items: [
+              { label: '&One spread: back, spine, front', checked: book && !Model.isSingle(doc), run: () => setCoverLayout('spread') },
+              { label: '&Single pages: front and back', checked: book && Model.isSingle(doc), run: () => setCoverLayout('single') },
+            ],
+          },
+          { label: '&Go to cover', disabled: !book || !doc.cover.enabled, run: () => goTo({ kind: 'cover' }) },
+        ],
+      },
+      {
+        title: '&Help',
+        items: [
+          { label: "&What's new", run: () => showWhatsNew() },
+          { label: '&Check for updates', run: () => openSettings('app') },
+          { label: '&Release notes on GitHub', run: () => ep.update.releases() },
+          '-',
+          { label: '&About Endpaper', run: about },
+        ],
+      },
+    ];
+  }
+
   /* ================= start ================= */
   async function init() {
     showLoading(true);
     const info = await ep.app.info();
     S.version = info.version;
+    // The copy run from the source folder says so in the title bar.
+    if (info.testVersion) document.body.classList.add('test-version');
     S.settings = await ep.settings.get();
     ep.app.boot('settings');
     $('#brand-btn').innerHTML = BRAND.icon;
     bindChrome();
+    Menu.init(menus);
+    ep.on('app:fullscreen', (on) => document.body.classList.toggle('is-fullscreen', on));
     Editor.init();
     Panels.init();
     // Each finished piece moves the splash screen's bar along.
@@ -1234,7 +1463,7 @@ const App = (() => {
   return {
     S, unit, history, change, render, markDirty, select, selectionChanged, goTo, setTool,
     addItem, pickPhotoFor, setPhoto, placePhotos, startCrop, endCrop, cmd, align, pageOp,
-    kit, status, zoomChanged, init, openExport, save, newDocument, loadDoc,
+    kit, status, zoomChanged, init, openExport, save, newDocument, loadDoc, setCoverLayout,
   };
 })();
 
