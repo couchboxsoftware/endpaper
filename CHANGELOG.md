@@ -19,6 +19,13 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.3 · 19 Nov 2026
+Double-click a text box to type in it again.
+
+### Fixed
+- Double-clicking a text box opens it so you can change or add to the text. Double-clicking a photo crops it, or picks a photo if the frame is empty.
+- Clicking inside text you're typing moves the cursor there, instead of closing the text box.
+
 ## 0.1.2 · 19 Nov 2026
 A menu bar like other Windows apps, inside covers, and covers as single pages.
 

@@ -364,6 +364,8 @@ const Editor = (() => {
     if (e.button !== 0) return;
     const { doc } = S();
     if (!doc) return;
+    // A click inside the text being edited just moves the cursor.
+    if (e.target.closest('.inline-text')) return;
     if (S().editing) Text.finish();
     const p = boardPoint(e);
     const g = geoAt(p);
@@ -411,6 +413,16 @@ const Editor = (() => {
     if (itemEl && !itemEl.dataset.master && !itemEl.classList.contains('locked')) id = itemEl.dataset.id;
     else if (selEl && !selEl.classList.contains('sel-locked')) id = selEl.dataset.id;
     if (id) {
+      // Two presses on the same box in quick succession open it (type into text, crop a photo).
+      // Counted here because the browser's own dblclick never arrives: the press is
+      // preventDefault()ed so boxes can be dragged, which also stops the browser counting clicks.
+      const now = performance.now();
+      const again = lastPress && lastPress.id === id && now - lastPress.t < DOUBLE_MS && Math.hypot(p.x - lastPress.x, p.y - lastPress.y) < 6;
+      lastPress = again ? null : { id, t: now, x: p.x, y: p.y };
+      if (again && !e.shiftKey && !e.ctrlKey) {
+        e.preventDefault();
+        return openItem(id);
+      }
       const found = Model.findItem(doc, id, S().surface);
       if (found && !Model.sameSurface(found.surface, S().surface)) App.goTo(found.surface, { keepSel: false });
       const sel = S().sel;
@@ -618,14 +630,18 @@ const Editor = (() => {
     Panels.refreshGeometry();
   }
 
+  // A real dblclick event, if one ever arrives (onDown counts the clicks itself).
   function onDbl(e) {
-    // The selection outline is redrawn between the two clicks, so Windows can report the
-    // double-click on the layer behind it. Look for the box under the pointer instead.
     const el = e.target.closest('.item, .sel') || document.elementsFromPoint(e.clientX, e.clientY).find((x) => x.matches('.sel[data-id], .item[data-id]'));
-    if (!el) return;
-    const id = el.dataset.id;
-    const found = id && Model.findItem(S().doc, id);
-    if (!found || found.item.locked || el.dataset.master) return;
+    if (!el || el.dataset.master) return;
+    openItem(el.dataset.id);
+  }
+  let lastPress = null;
+  const DOUBLE_MS = 500; // Windows' standard double-click time
+  function openItem(id) {
+    const found = id && Model.findItem(S().doc, id, S().surface);
+    if (!found || found.item.locked) return;
+    if (S().editing && S().editing.id === id) return; // already typing in it
     if (found.item.type === 'text') Text.edit(found.item);
     else if (found.item.type === 'image') {
       if (!found.item.asset) App.pickPhotoFor(found.item);
