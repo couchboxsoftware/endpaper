@@ -90,6 +90,7 @@ The checks drive the real app. Each one makes a throwaway settings folder, start
 Then one check per feature:
 
 - `export-open-check.js`: with Inkdesktop installed, the Export window offers "Open files in Inkdesktop after export" (ticked to start with, then as last left); a book export opens its inside pages in Inkdesktop and shows the folder; pictures show the folder. Without it: "Open file(s) after export", and "Do you want to try Inkdesktop?" before anything opens, in Inkdesktop's colours; its buttons, "Don't ask again", and Settings, Hints bringing it back. It uses a stand-in Inkdesktop (`ENDPAPER_TEST_INKDESKTOP`) and exports to a throwaway folder (`ENDPAPER_TEST_EXPORT_DIR`), and nothing is really opened.
+- `cover-pages-check.js`: with the cover as single pages, a box across the fold shows on the front and back (and inside front and back) thumbnails, and changing it on one page redraws the other's thumbnail too, both ways, and after undo.
 
 `test/helper.js` is what they share, and `test/run-all.js` runs them in turn.
 

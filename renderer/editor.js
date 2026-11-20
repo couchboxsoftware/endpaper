@@ -908,6 +908,10 @@ const Story = (() => {
       Layout.invalidate();
       App.markDirty();
       Editor.render();
+      // Redraw the thumbnails the text shows on (every cover page, if it's on the cover).
+      const at = Model.findItem(doc, head.id, App.S.surface);
+      if (at && at.surface.kind === 'cover') Model.coverSurfaces(doc).forEach((s) => Panels.invalidateThumbs(s));
+      else if (at) for (const s of Editor.spreadSurfaces(doc, at.surface)) Panels.invalidateThumbs(s);
       Panels.refreshThumbsSoon();
       info();
     }, 150);

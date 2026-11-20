@@ -19,6 +19,13 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.8 · 20 Nov 2026
+Cover page thumbnails stay right when something crosses the fold.
+
+### Fixed
+- With the cover as single pages, changing something that crosses the fold updates the other side's thumbnail too, on the outside and the inside cover (Pages, Cover).
+- Typing in the Story window updates the page thumbnails as you go.
+
 ## 0.1.7 · 20 Nov 2026
 Open what you export straight away, in Inkdesktop if you have it.
 

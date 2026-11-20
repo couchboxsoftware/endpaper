@@ -94,8 +94,10 @@ const App = (() => {
     Layout.invalidate();
     if (opts.thumbs === 'all' || S.surface.kind === 'master' || opts.thumbsShared) Panels.invalidateThumbs();
     else for (const s of Editor.spreadSurfaces(S.doc, S.surface)) Panels.invalidateThumbs(s);
-    // Covers can show {pages} and {title}, so page changes redraw their thumbnails too.
-    if (S.surface.kind === 'page') for (const s of Model.coverSurfaces(S.doc)) Panels.invalidateThumbs(s);
+    // Covers can show {pages} and {title}, so page changes redraw their thumbnails too. And a
+    // cover's pages (front, back, inside front, inside back) are windows onto one sheet, so a box
+    // across the fold shows on more than one: a change on any of them redraws them all.
+    if (S.surface.kind === 'page' || S.surface.kind === 'cover') for (const s of Model.coverSurfaces(S.doc)) Panels.invalidateThumbs(s);
     render();
   }
   function markDirty() {
