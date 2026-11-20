@@ -61,6 +61,7 @@ const DEFAULTS = {
   lastSeenVersion: null,
   recent: [],
   reopen: [], // designs to open again after an update: [{ path, surface }]
+  openAfterExport: true, // the Export window's "Open ... after export" tick box, as last left
   hintsOff: {}, // hint pop-ups turned off with "Don't show this again": { id: when } (renderer/hints.js)
 };
 let settings = { ...DEFAULTS, ...readJSON(user('settings.json'), {}) };
@@ -348,6 +349,14 @@ handle('app:confirm', async (o) => {
   return r.response;
 });
 handle('app:reveal', (p) => shell.showItemInFolder(p));
+
+/* ---------- after export: Inkdesktop or the default app (src/main/inkdesktop.js) ---------- */
+const inkdesktop = require('./src/main/inkdesktop');
+handle('inkdesktop:find', () => inkdesktop.find());
+handle('inkdesktop:open', (p) => inkdesktop.open(p));
+handle('inkdesktop:get', () => inkdesktop.getIt());
+handle('file:open-default', (p) => inkdesktop.openDefault(p));
+handle('file:show-folder', (p) => inkdesktop.showFolder(p));
 handle('app:readAppFile', (rel) => {
   const f = path.normalize(path.join(ROOT, rel));
   if (!f.startsWith(ROOT)) throw new Error('outside app');
@@ -415,14 +424,16 @@ handle('file:save', async ({ path: p, text, name, saveAs }) => {
   addRecent(p);
   return p;
 });
+// ENDPAPER_TEST_EXPORT_DIR (tests only): export straight into that folder, without asking where.
+const testExportDir = process.env.ENDPAPER_TEST && process.env.ENDPAPER_TEST_EXPORT_DIR;
 handle('file:export', async ({ bytes, name, ext, label }) => {
-  const r = await dialog.showSaveDialog(win, { defaultPath: name, filters: [{ name: label, extensions: [ext] }] });
+  const r = testExportDir ? { filePath: path.join(testExportDir, path.basename(name)) } : await dialog.showSaveDialog(win, { defaultPath: name, filters: [{ name: label, extensions: [ext] }] });
   if (r.canceled || !r.filePath) return null;
   atomicWrite(r.filePath, Buffer.from(bytes));
   return r.filePath;
 });
 handle('file:exportMany', async ({ files }) => {
-  const r = await dialog.showOpenDialog(win, { title: 'Choose a folder for the images', properties: ['openDirectory', 'createDirectory'] });
+  const r = testExportDir ? { filePaths: [testExportDir] } : await dialog.showOpenDialog(win, { title: 'Choose a folder for the images', properties: ['openDirectory', 'createDirectory'] });
   if (r.canceled || !r.filePaths[0]) return null;
   for (const f of files) atomicWrite(path.join(r.filePaths[0], f.name), Buffer.from(f.bytes));
   return r.filePaths[0];

@@ -19,6 +19,15 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.7 · 20 Nov 2026
+Open what you export straight away, in Inkdesktop if you have it.
+
+### New
+- Open file(s) after export, a tick box in the Export window that stays as you last left it.
+- With Inkdesktop, our PDF app, installed, it opens your PDF in Inkdesktop. A book opens its inside pages, and the folder shows the cover beside them.
+- Without Inkdesktop, it asks whether you'd like to try it before the PDF opens in your usual PDF viewer. Tick "Don't ask again" to stop it, and bring it back in Settings, Hints.
+- Pictures exported as PNG or JPG open their folder, rather than a window for each one.
+
 ## 0.1.6 · 19 Nov 2026
 Endpaper now looks and behaves like the rest of the Couchbox Software family.
 

@@ -389,3 +389,29 @@ body.test-version .mb-test { display: inline-block; }
 /* Empty text boxes show where they are (screen only): placeholders on masters show on pages too. */
 .item.item-text.is-empty { outline: 1px dashed rgba(139, 92, 255, 0.55); outline-offset: -1px; }
 .item.from-master.is-empty { outline-color: rgba(139, 92, 255, 0.4); background: rgba(139, 92, 255, 0.04); }
+
+/* ---------- after export: the Try Inkdesktop window (renderer/inkdesktop.js) ----------
+   Left: Endpaper's own "Exported". Right: Inkdesktop's panel in Inkdesktop's colours (its blue
+   #2F6BE8 / #6F9BFF and its blue-tinted greys), with its pen nib and wordmark. */
+.modal.ink-offer { width: min(640px, 96vw); overflow: hidden; }
+.modal.ink-offer .modal-head { display: none; }
+.modal.ink-offer .modal-body { padding: 0; }
+.io-grid { display: grid; grid-template-columns: 1fr 1.15fr; min-height: 230px; }
+.io-done { padding: 18px 18px 16px; display: flex; flex-direction: column; }
+.io-done h3 { margin: 0 0 8px; font-size: 16px; }
+.io-files { list-style: none; margin: 0 0 12px; padding: 0; font-size: 13px; color: var(--muted); }
+.io-files li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 0; }
+.io-files li::before { content: '✓ '; color: var(--ok); }
+.io-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+.io-ink { background: #1d1f24; color: #e9ecf2; border-left: 3px solid #2f6be8; padding: 18px 18px 14px; display: flex; flex-direction: column; }
+.io-brand { display: flex; align-items: center; gap: 10px; }
+.io-word { font-family: 'Segoe UI', sans-serif; font-weight: 700; font-size: 20px; letter-spacing: 0.8px; color: #eee; line-height: 1; white-space: nowrap; }
+.io-word b { font-weight: 700; color: #2f6be8; }
+.io-ink h4 { margin: 14px 0 4px; font-size: 14px; font-weight: 600; color: #e9ecf2; text-transform: none; letter-spacing: 0; }
+.io-ink p { margin: 0 0 14px; font-size: 13px; line-height: 1.5; color: #9aa1b0; }
+.io-get { background: #2f6be8; color: #fff; border: 1px solid #2f6be8; border-radius: 7px; padding: 6px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.io-get:hover { background: #6f9bff; border-color: #6f9bff; }
+.io-get:focus-visible { outline: 2px solid #6f9bff; outline-offset: 2px; }
+.io-off { margin-top: 10px; font-size: 12px; color: #9aa1b0; display: flex; align-items: center; gap: 6px; }
+.io-off input { accent-color: #2f6be8; }
+.ex-open { margin-top: 10px; }

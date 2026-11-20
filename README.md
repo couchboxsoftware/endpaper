@@ -37,6 +37,7 @@ This checks the changelog entry, that everything's committed, that the GitHub CL
 - `main.js`: the window, the splash hand-over, files, fonts, colour profiles, settings, brand kit, templates and bin, recovery, and the test hook (`ENDPAPER_TEST`).
 - `preload.js`: the only bridge between the page and the system (`window.ep`).
 - `src/main/updater.js`: checking, downloading and installing updates from GitHub Releases.
+- `src/main/inkdesktop.js`: finding Inkdesktop (Couchbox Software's PDF app) and opening exported files in it, or in Windows' default app.
 - `renderer/index.html` + `renderer/styles.css`: the page and its look (dark only, Endpaper's tokens).
 - `renderer/app.js`: state, undo, files, export, Settings, the start screen and the menus.
 - `renderer/menubar.js`: the File, Edit, View… menu bar in the title bar (the menus themselves are in `renderer/app.js`).
@@ -51,6 +52,7 @@ This checks the changelog entry, that everything's committed, that the GitHub CL
 - `renderer/updates.js`: the update banner and the Updates part of Settings, App.
 - `renderer/whatsnew.js`: What's new in Settings, App, and the card after an update, with the coloured New, Improved and Fixed titles.
 - `renderer/hints.js`: every hint pop-up, in one list (Settings, Hints can show them again).
+- `renderer/inkdesktop.js`: what opens after export, and the "Do you want to try Inkdesktop?" window, in Inkdesktop's own colours and pen nib.
 - `renderer/util.js`: shared helpers: `$`, `esc`, toasts, windows, menus.
 - `renderer/brand.js`: the logo (the open book), the magenta and the wordmark. Everything else reads it.
 - `renderer/splash.html` + `renderer/splash.js`: the open-book splash screen.
@@ -67,7 +69,7 @@ This checks the changelog entry, that everything's committed, that the GitHub CL
 
 Everything lives in `%APPDATA%\Endpaper`:
 
-- `settings.json`: settings, recent files, turned-off hints, and what to reopen after an update.
+- `settings.json`: settings, recent files, turned-off hints (including "Try Inkdesktop"), whether to open files after export, and what to reopen after an update.
 - `brandkit.json`: your brand kit (colours, text styles, logos).
 - `templates\`: your templates. Deleted ones go to `bin\` and stay there for 30 days.
 - `recovery\`: copies of unsaved work, made every 20 seconds and offered back if Endpaper closes unexpectedly.
@@ -84,6 +86,10 @@ The checks drive the real app. Each one makes a throwaway settings folder, start
 - `whatsnew-check.js`: every CHANGELOG entry follows the template (and the check catches mistakes); Settings, App shows the newest three versions with "You have this" and New, Improved and Fixed in their colours and order; the card shows once after an update, not a second time, and not on a brand-new install.
 - `settings-check.js`: Settings has its five tabs, each holds its own settings, changes are saved straight away and kept after opening again, Settings reopens on the tab used last, and a new install opens maximised.
 - `close-check.js`: windows only close on a press and release outside them (dragging out of one keeps it open) and Esc closes the top one; with nothing unsaved Endpaper just closes; with unsaved work it asks first, Cancel keeps it open, and Don't save closes it.
+
+Then one check per feature:
+
+- `export-open-check.js`: with Inkdesktop installed, the Export window offers "Open files in Inkdesktop after export" (ticked to start with, then as last left); a book export opens its inside pages in Inkdesktop and shows the folder; pictures show the folder. Without it: "Open file(s) after export", and "Do you want to try Inkdesktop?" before anything opens, in Inkdesktop's colours; its buttons, "Don't ask again", and Settings, Hints bringing it back. It uses a stand-in Inkdesktop (`ENDPAPER_TEST_INKDESKTOP`) and exports to a throwaway folder (`ENDPAPER_TEST_EXPORT_DIR`), and nothing is really opened.
 
 `test/helper.js` is what they share, and `test/run-all.js` runs them in turn.
 

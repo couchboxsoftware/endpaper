@@ -7,6 +7,7 @@ const channels = [
   'settings:get', 'settings:set', 'changelog:get',
   'file:open', 'file:read', 'file:save', 'file:export', 'file:exportMany', 'recent:list', 'recent:forget',
   'image:pick', 'fonts:list', 'fonts:read', 'fonts:add',
+  'inkdesktop:find', 'inkdesktop:open', 'inkdesktop:get', 'file:open-default', 'file:show-folder',
   'icc:list', 'icc:read', 'icc:add',
   'brandkit:get', 'brandkit:set',
   'templates:list', 'templates:save', 'templates:read', 'templates:delete',

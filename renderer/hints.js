@@ -10,6 +10,12 @@ const Hints = (() => {
       text: "This box comes from the page's master, so it's locked here. To change it on this page only, hold Ctrl and Shift and click it. Other pages keep the master's version.",
       where: 'Double-clicking something from a master on a page',
     },
+    // Shown as its own window (renderer/inkdesktop.js), but turned off and on like any hint.
+    'try-inkdesktop': {
+      title: 'Try Inkdesktop',
+      text: "Before a PDF opens after export, Endpaper suggests Inkdesktop, our PDF app, while it isn't installed.",
+      where: "Opening a PDF after export, when Inkdesktop isn't installed",
+    },
   };
 
   const off = () => (App.S.settings && App.S.settings.hintsOff) || {};
@@ -44,6 +50,7 @@ const Hints = (() => {
     await save(next);
   }
   const resetAll = () => save({});
+  const turnOff = (id) => save({ ...off(), [id]: Date.now() });
 
   /* ---------- Settings, Hints ---------- */
   function settingsHtml() {
@@ -62,5 +69,5 @@ const Hints = (() => {
       <div class="btn-row"><button class="btn btn-sm" data-hints-reset-all ${hidden ? '' : 'disabled'}>Show all hints again</button></div>`;
   }
 
-  return { LIST, show, isOff, reset, resetAll, settingsHtml };
+  return { LIST, show, isOff, turnOff, reset, resetAll, settingsHtml };
 })();

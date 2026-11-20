@@ -608,6 +608,9 @@ const App = (() => {
     const withInside = doc.cover.enabled && doc.cover.inside.enabled;
     const singleCover = doc.cover.enabled && Model.isSingle(doc);
     const nameOf = (s) => Model.surfaceName(doc, s).replace(/^[A-Z]/, (c) => c.toLowerCase()); // 'page 3', 'cover', 'inside cover'
+    // After export: Inkdesktop when it's installed, otherwise the default app (renderer/inkdesktop.js).
+    const ink = await Inkdesktop.find(true);
+    const openAfter = S.settings.openAfterExport !== false; // remembered; ticked to start with
     const m = openModal({
       title: 'Export',
       wide: true,
@@ -634,6 +637,7 @@ const App = (() => {
             <label class="switch"><input type="checkbox" data-x="ibleed"><span>Include bleed</span></label>
             <p class="hint">PNG and JPG are RGB images for screens, social media or proofs. For printing, use Print PDF.</p>
           </div>
+          <label class="switch ex-open"><input type="checkbox" data-x="openAfter" ${openAfter ? 'checked' : ''}><span data-open-label></span></label>
         </div>
         <div class="ex-col ex-check">
           <h5>Check</h5>
@@ -663,6 +667,7 @@ const App = (() => {
       if (singleCover && (what === 'book' || what === 'cover')) txt += `<br>${format === 'pdf' ? `The cover PDF has ${coverS.length} pages` : `${coverS.length} cover images`}: ${coverS.map((s) => nameOf(s).replace(/ cover$/, '')).join(', ')}`;
       else if (withInside && (what === 'book' || what === 'cover')) txt += format === 'pdf' ? '<br>The cover PDF has 2 pages: the outside, then the inside' : '<br>The cover and the inside cover as separate images';
       $('.ex-summary', el).innerHTML = `<p class="hint">${txt}</p>`;
+      $('[data-open-label]', el).textContent = format !== 'pdf' ? 'Open the folder after export' : ink ? 'Open files in Inkdesktop after export' : 'Open file(s) after export';
     };
     refresh();
     el.addEventListener('change', refresh);
@@ -680,6 +685,8 @@ const App = (() => {
       if (!b) return;
       if (b.dataset.a === 'no') return m.close();
       const what = q('what').value;
+      const open = q('openAfter').checked;
+      if (open !== openAfter) applySetting({ openAfterExport: open });
       let idxs = doc.pages.map((_, i) => i);
       if (what === 'current') idxs = [curPage];
       if (what === 'range') {
@@ -714,7 +721,8 @@ const App = (() => {
             if (p) saved.push(p);
           }
           m.close();
-          if (saved.length) toast(`Exported ${saved.length === 1 ? saved[0].split(/[\\/]/).pop() : saved.length + ' PDFs'}.`, { action: 'Show in folder', onAction: () => ep.app.reveal(saved[0]), ms: 8000 });
+          if (saved.length && open) Inkdesktop.afterExport({ files: saved, format: 'pdf' });
+          else if (saved.length) toast(`Exported ${saved.length === 1 ? saved[0].split(/[\\/]/).pop() : saved.length + ' PDFs'}.`, { action: 'Show in folder', onAction: () => ep.app.reveal(saved[0]), ms: 8000 });
         } else {
           const dpi = clamp(+q('dpi').value || 300, 30, 1200);
           const surfaces = what === 'cover' ? coverS : pages;
@@ -729,7 +737,9 @@ const App = (() => {
           if (files.length === 1) p = await ep.file.export({ bytes: files[0].bytes, name: files[0].name, ext: format, label: format.toUpperCase() });
           else p = await ep.file.exportMany({ files });
           m.close();
-          if (p) toast(`Exported ${files.length} image${files.length === 1 ? '' : 's'}.`, { action: 'Show in folder', onAction: () => ep.app.reveal(files.length === 1 ? p : p + '\\' + files[0].name), ms: 8000 });
+          const first = p && (files.length === 1 ? p : p + '\\' + files[0].name);
+          if (p) toast(`Exported ${files.length} image${files.length === 1 ? '' : 's'}.`, { action: 'Show in folder', onAction: () => ep.app.reveal(first), ms: 8000 });
+          if (p && open) Inkdesktop.afterExport({ files: [first], format, folder: first });
         }
       } catch (err) {
         console.error(err);
