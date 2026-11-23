@@ -415,3 +415,31 @@ body.test-version .mb-test { display: inline-block; }
 .io-off { margin-top: 10px; font-size: 12px; color: #9aa1b0; display: flex; align-items: center; gap: 6px; }
 .io-off input { accent-color: #2f6be8; }
 .ex-open { margin-top: 10px; }
+
+/* ---------- Preview book (renderer/bookview.js) ---------- */
+#bookview { position: fixed; left: 0; right: 0; bottom: 0; top: var(--mb-h); z-index: 45; background: var(--bg); overflow: hidden; user-select: none; }
+#bookview .bv-close { position: absolute; top: 14px; right: 16px; z-index: 2; }
+#bookview .bv-stage { position: absolute; inset: 0 0 64px 0; display: grid; place-items: center; }
+#bookview .bv-book { position: relative; perspective: 2400px; perspective-origin: 50% 40%; }
+#bookview .bv-book.bv-grab { cursor: grabbing; }
+#bookview .bv-shadow { position: absolute; left: 3%; right: 3%; bottom: -26px; height: 40px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0)); pointer-events: none; }
+#bookview .bv-side { position: absolute; top: 0; background-size: 100% 100%; }
+#bookview .bv-edges { position: absolute; top: 2px; bottom: 2px; background: repeating-linear-gradient(90deg, #e2ddd2 0 1px, #bdb7aa 1px 2px); }
+#bookview .bv-cast { position: absolute; top: 0; pointer-events: none; opacity: 0; }
+#bookview .bv-castR { background: linear-gradient(90deg, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0) 45%); }
+#bookview .bv-castL { background: linear-gradient(270deg, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0) 45%); }
+#bookview .bv-leaf { position: absolute; top: 0; transform-style: preserve-3d; pointer-events: none; display: none; }
+#bookview .bv-strip { position: absolute; top: 0; height: 100%; transform-origin: 0 50%; transform-style: preserve-3d; }
+#bookview .bv-face { position: absolute; inset: 0; backface-visibility: hidden; background-repeat: no-repeat; }
+#bookview .bv-face.bv-back { transform: rotateY(180deg); }
+#bookview .bv-face::after, #bookview .bv-cf::after { content: ''; position: absolute; inset: 0; background: rgba(0, 0, 0, var(--sh, 0)); }
+#bookview .bv-closed { position: absolute; top: 0; transform-style: preserve-3d; display: none; }
+#bookview .bv-cf { position: absolute; backface-visibility: hidden; }
+#bookview .bv-spinning .bv-closed { display: block; }
+/* !important: the page drawing sets visibility on these itself. */
+#bookview .bv-spinning > :not(.bv-closed):not(.bv-shadow) { visibility: hidden !important; }
+#bookview .bv-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 64px; display: flex; align-items: center; justify-content: center; gap: 14px; border-top: 1px solid var(--line); background: var(--panel); }
+#bookview .bv-bar .btn { min-width: 34px; font-size: 15px; }
+#bookview .bv-where { min-width: 170px; text-align: center; }
+#bookview .bv-tip { position: absolute; left: 18px; color: var(--muted); font-size: 12px; }
+@media (max-width: 1100px) { #bookview .bv-tip { display: none; } }

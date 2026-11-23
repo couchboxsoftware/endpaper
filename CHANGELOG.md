@@ -19,6 +19,13 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.9 · 23 Nov 2026
+Hold your book before it's printed.
+
+### New
+- View, Preview book (Ctrl+Shift+P) shows a book with a cover as the real thing: open it, turn the pages, and turn it over to see the spine and back.
+- Pages turn by clicking, dragging the edge or the arrow keys, and pages bend like paper while the covers stay stiff.
+
 ## 0.1.8 · 20 Nov 2026
 Cover page thumbnails stay right when something crosses the fold.
 

@@ -540,6 +540,7 @@ const App = (() => {
     }
   }
   async function loadDoc(doc, path, { dirty = false } = {}) {
+    BookView.close(); // a preview open on another design
     if (doc.format !== 'endpaper') throw new Error('not an endpaper file');
     delete doc.thumb;
     delete doc.filePath;
@@ -580,6 +581,7 @@ const App = (() => {
   }
   async function closeDoc() {
     if (!(await confirmDiscard())) return;
+    BookView.close();
     S.doc = null;
     S.filePath = null;
     S.dirty = false;
@@ -1210,6 +1212,9 @@ const App = (() => {
     if (ctrl && k.toLowerCase() === 'n') return e.preventDefault(), newDialog('print');
     if (ctrl && k === ',') return e.preventDefault(), openSettings(); // on the tab used last (standard 1.14)
     if ($('.modal-overlay')) return;
+    // Preview book: Ctrl+Shift+P opens and closes it; while it's open its own keys turn the pages.
+    if (ctrl && e.shiftKey && k.toLowerCase() === 'p') return e.preventDefault(), BookView.toggle();
+    if (BookView.isOpen()) return;
     if (!S.doc || isTyping()) return;
     if (ctrl && k.toLowerCase() === 'e') return e.preventDefault(), openExport();
     if (ctrl && k.toLowerCase() === 'w') return e.preventDefault(), closeDoc();
@@ -1361,6 +1366,8 @@ const App = (() => {
       {
         title: '&View',
         items: [
+          { label: '&Preview book', key: 'Ctrl+Shift+P', disabled: !BookView.available(doc), run: () => BookView.toggle() },
+          '-',
           { label: 'Zoom &in', key: 'Ctrl+=', disabled: noDoc, run: zoom(1.25) },
           { label: 'Zoom &out', key: 'Ctrl+-', disabled: noDoc, run: zoom(1 / 1.25) },
           { label: '&Fit on screen', key: 'Ctrl+0', disabled: noDoc, run: () => Editor.fit() },

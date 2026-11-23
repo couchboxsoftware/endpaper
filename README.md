@@ -52,6 +52,7 @@ This checks the changelog entry, that everything's committed, that the GitHub CL
 - `renderer/updates.js`: the update banner and the Updates part of Settings, App.
 - `renderer/whatsnew.js`: What's new in Settings, App, and the card after an update, with the coloured New, Improved and Fixed titles.
 - `renderer/hints.js`: every hint pop-up, in one list (Settings, Hints can show them again).
+- `renderer/bookview.js`: Preview book (View, Preview book): the design as a book you can page through and turn over.
 - `renderer/inkdesktop.js`: what opens after export, and the "Do you want to try Inkdesktop?" window, in Inkdesktop's own colours and pen nib.
 - `renderer/util.js`: shared helpers: `$`, `esc`, toasts, windows, menus.
 - `renderer/brand.js`: the logo (the open book), the magenta and the wordmark. Everything else reads it.
