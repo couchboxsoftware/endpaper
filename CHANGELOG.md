@@ -19,6 +19,18 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.10 · 23 Nov 2026
+Know what each copy weighs.
+
+### New
+- File, Shipment preparation sets the paper and binding (paperback or hardback; the weight, finish and shade of the pages and the cover) and shows the finished size and weight of one copy, part by part.
+- New book has More options for the same paper and binding, so the spine is right from the start.
+- Type in your printer's paper thickness (File, Shipment preparation) and it's used instead of the estimate.
+
+### Improved
+- The spine is worked out from the paper's weight and finish. The cover's Properties sums up the paper in one line, with Change… to open Shipment preparation.
+- Books made before this keep exactly the spine they had.
+
 ## 0.1.9 · 23 Nov 2026
 Hold your book before it's printed.
 

@@ -1015,6 +1015,7 @@ const App = (() => {
     const book = kind === 'book';
     let w = book ? 129 : 210, h = book ? 198 : 297;
     let dpi = 300;
+    const print = Model.printDefault(); // More options: the paper and binding, so the spine is right from the start
     const m = openModal({
       title: book ? 'New book' : 'New design',
       wide: true,
@@ -1030,7 +1031,8 @@ const App = (() => {
           <label class="field"><span>Pages</span><input class="input" data-n="pages" value="${book ? 24 : 1}"></label>
         </div>
         <div class="btn-row"><button class="btn btn-sm" data-swap="1">⤾ Swap to ${w > h ? 'portrait' : 'landscape'}</button></div>
-        ${book ? '<p class="hint">Books get facing pages, an A-Master with page numbers, and a cover with the spine worked out from the page count.</p>' : '<label class="switch"><input type="checkbox" data-n="facing"><span>Facing pages (for brochures and booklets)</span></label>'}
+        ${book ? `<p class="hint">Books get facing pages, an A-Master with page numbers, and a cover with the spine worked out from the page count.</p>
+        <details class="nd-more"><summary>More options</summary>${Shipment.paperFields(print, { override: false })}<p class="hint nd-spine"></p></details>` : '<label class="switch"><input type="checkbox" data-n="facing"><span>Facing pages (for brochures and booklets)</span></label>'}
         </div><div class="nd-col nd-preview"><div class="nd-page"></div><p class="nd-size muted"></p></div></div>
         <div class="modal-actions"><button class="btn btn-ghost" data-a="no">Cancel</button><button class="btn btn-accent" data-a="yes">Create</button></div>`,
     });
@@ -1049,10 +1051,17 @@ const App = (() => {
       $('[data-swap]', el).textContent = `⤾ Swap to ${w > h ? 'portrait' : 'landscape'}`;
       const match = Model.PRESETS.flatMap((g) => g.items).find(([, pw, ph]) => Math.abs(pw - w) < 0.05 && Math.abs(ph - h) < 0.05);
       n('preset').value = match ? `${match[1]}x${match[2]}` : '';
+      const sp = $('.nd-spine', el);
+      if (sp) {
+        const pages = clamp(parseInt(n('pages').value) || 1, 1, 2000);
+        const spine = (pages + (pages % 2)) * Model.estimatePerPage(print);
+        sp.textContent = `Spine about ${Number(spine.toFixed(2))} mm for ${pages} pages. You can change the paper later in File, Shipment preparation.`;
+      }
     };
     show();
     el.addEventListener('change', (e) => {
       const t = e.target;
+      if (t.dataset.pf) return Shipment.readField(print, t), show();
       if (t === n('preset') && t.value) [w, h] = t.value.split('x').map(Number);
       if (t === n('w')) w = Units.parse(t.value, u, dpi) || w;
       if (t === n('h')) h = Units.parse(t.value, u, dpi) || h;
@@ -1062,6 +1071,8 @@ const App = (() => {
       show();
     });
     el.addEventListener('click', (e) => {
+      const pb = e.target.closest('[data-pf-seg] button');
+      if (pb) return Shipment.readSeg(print, pb, el), show();
       const ub = e.target.closest('[data-nunit] button');
       if (ub) {
         u = ub.dataset.v;
@@ -1076,7 +1087,7 @@ const App = (() => {
       w = Units.parse(n('w').value, u, dpi) || w;
       h = Units.parse(n('h').value, u, dpi) || h;
       const pages = clamp(parseInt(n('pages').value) || 1, 1, 2000);
-      const opts = { name: n('name').value.trim() || 'Untitled', w, h, dpi, bleed: clamp(parseFloat(n('bleed').value) || 0, 0, 25), pages, kind, facing: book || !!(n('facing') && n('facing').checked) };
+      const opts = { name: n('name').value.trim() || 'Untitled', w, h, dpi, bleed: clamp(parseFloat(n('bleed').value) || 0, 0, 25), pages, kind, facing: book || !!(n('facing') && n('facing').checked), print: book ? print : null };
       m.close();
       newDocument(opts);
     });
@@ -1330,6 +1341,7 @@ const App = (() => {
           { label: 'Save as &template…', disabled: noDoc, run: () => saveTemplate() },
           '-',
           { label: '&Export…', key: 'Ctrl+E', disabled: noDoc, run: () => openExport() },
+          { label: 'Shipment &preparation…', disabled: !Shipment.available(doc), run: () => Shipment.open() },
           { label: 'Show in &folder', disabled: !S.filePath, run: () => ep.app.reveal(S.filePath) },
           '-',
           {

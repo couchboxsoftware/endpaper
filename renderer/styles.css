@@ -443,3 +443,29 @@ body.test-version .mb-test { display: inline-block; }
 #bookview .bv-where { min-width: 170px; text-align: center; }
 #bookview .bv-tip { position: absolute; left: 18px; color: var(--muted); font-size: 12px; }
 @media (max-width: 1100px) { #bookview .bv-tip { display: none; } }
+
+/* ---------- Shipment preparation (renderer/shipment.js) and New book's More options ---------- */
+.sp { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; }
+.sp h5 { margin-top: 0; }
+.pf-row { display: grid; grid-template-columns: 96px 104px minmax(0, 1.25fr) minmax(0, 1fr); gap: 8px; align-items: center; margin: 8px 0; }
+.pf-row .field { display: flex; align-items: center; gap: 6px; }
+.pf-row .field .input { width: 62px; min-width: 0; flex: none; }
+.pf-row select.input { min-width: 0; width: 100%; }
+.pf-row .field em { white-space: nowrap; }
+.pf-row .pf-label { color: var(--muted); font-size: 12px; }
+.pf-row .field { margin: 0; }
+.pf-row .pf-note { font-size: 12px; grid-column: span 2; }
+.sp-out { background: var(--panel-2); border-radius: 10px; padding: 14px 16px; }
+.sp-figures { display: flex; flex-direction: column; gap: 10px; }
+.sp-fig { display: grid; grid-template-columns: 100px 1fr; column-gap: 10px; }
+.sp-fig > span { color: var(--muted); font-size: 12px; padding-top: 2px; }
+.sp-fig > b { font-weight: 600; font-variant-numeric: tabular-nums; }
+.sp-fig > em { grid-column: 2; font-style: normal; color: var(--muted); font-size: 12px; }
+.sp-weight > b { font-size: 20px; color: var(--accent-2); }
+.sp-parts { margin-left: 110px; border-collapse: collapse; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sp-parts td { padding: 1px 0; }
+.sp-parts td:last-child { text-align: right; padding-left: 24px; }
+.nd-more { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.nd-more > summary { cursor: pointer; color: var(--muted); font-size: 12px; padding: 4px 0; }
+.nd-more[open] > summary { color: var(--text); }
+.paper-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }

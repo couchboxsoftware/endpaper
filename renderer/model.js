@@ -25,16 +25,66 @@ const Model = (() => {
   ];
 
   // Thickness of one page (half a sheet), in mm. Printers and print-on-demand sites publish these.
-  const PAPERS = [
-    { id: 'kdp-white', name: 'Print on demand, white paper', perPage: 0.0572 },
-    { id: 'kdp-cream', name: 'Print on demand, cream paper', perPage: 0.0635 },
-    { id: 'kdp-colour', name: 'Print on demand, premium colour', perPage: 0.0596 },
-    { id: 'uncoated-80', name: '80 gsm uncoated', perPage: 0.05 },
-    { id: 'uncoated-100', name: '100 gsm uncoated', perPage: 0.062 },
-    { id: 'silk-130', name: '130 gsm silk', perPage: 0.058 },
-    { id: 'silk-170', name: '170 gsm silk', perPage: 0.075 },
-    { id: 'custom', name: 'Custom', perPage: null },
-  ];
+
+  /* ---------- paper, binding, thickness and weight (File, Shipment preparation) ----------
+     doc.print = { binding, pagesGsm, pagesFinish, pagesShade, coverGsm, coverFinish, boardMm, caliper }
+     Thickness is estimated from the paper's weight and finish: a sheet's thickness in microns is
+     roughly its gsm times the paper's bulk (uncoated is bulkier than silk or gloss, cream bulkier
+     than white). caliper, when set, is the printer's own figure in mm per page and wins. */
+  const FINISHES = [['uncoated', 'Uncoated'], ['silk', 'Silk'], ['gloss', 'Gloss']];
+  const SHADES = [['white', 'White'], ['cream', 'Cream']];
+  const BULK = { uncoated: { white: 1.25, cream: 1.4 }, silk: { white: 0.9, cream: 0.95 }, gloss: { white: 0.8, cream: 0.85 } };
+  const printDefault = () => ({ binding: 'paperback', pagesGsm: 80, pagesFinish: 'uncoated', pagesShade: 'white', coverGsm: 300, coverFinish: 'silk', boardMm: 2, caliper: null });
+  // One sheet (two pages), in mm.
+  const sheetMm = (gsm, finish, shade = 'white') => (gsm * ((BULK[finish] || BULK.uncoated)[shade] || 1.25)) / 1000;
+  const estimatePerPage = (p) => sheetMm(p.pagesGsm, p.pagesFinish, p.pagesShade) / 2;
+  const perPage = (doc) => (doc.print.caliper > 0 ? doc.print.caliper : estimatePerPage(doc.print));
+  // Fixed figures for the parts of a book that aren't chosen.
+  const HARDBACK = { square: 3, hinge: 7, turnIn: 15, boardDensity: 650 /* g per m² per mm of greyboard */, endpaperGsm: 140 };
+  const GLUE_SHARE = 0.02; // glue, thread and lamination, as a share of the weight
+
+  // Size and weight of one finished copy. Weights in grams, sizes in mm.
+  function bookSpecs(doc) {
+    const p = doc.print;
+    const bound = doc.facing || doc.cover.enabled;
+    const pages = bound ? coverPages(doc) : doc.pages.length;
+    const sheets = Math.ceil(pages / 2);
+    const block = pages * perPage(doc);
+    const m2 = (w, h) => (w / 1000) * (h / 1000);
+    const { w, h } = doc;
+    const coverSheet = sheetMm(p.coverGsm, p.coverFinish);
+    const parts = [['Pages', sheets * m2(w, h) * p.pagesGsm]];
+    let size;
+    if (!doc.cover.enabled) size = { w, h, t: block };
+    else if (p.binding === 'hardback') {
+      // Boards stand out 3 mm past the pages at the top, bottom and outer edge; the case spine
+      // spans the pages and both boards; the printed wrap folds 15 mm round the boards.
+      const H = HARDBACK;
+      const caseH = h + 2 * H.square;
+      const spineW = block + 2 * p.boardMm;
+      parts.push(['Boards', (2 * m2(w, caseH) * p.boardMm + m2(spineW, caseH) * 1) * H.boardDensity]);
+      parts.push(['Cover', m2(2 * w + spineW + 2 * H.hinge + 2 * H.turnIn, caseH + 2 * H.turnIn) * p.coverGsm]);
+      parts.push(['Endpapers', 2 * m2(2 * w, h) * H.endpaperGsm]);
+      size = { w: w + H.square, h: caseH, t: spineW + 2 * coverSheet };
+    } else {
+      parts.push(['Cover', m2(2 * w + block, h) * p.coverGsm]);
+      size = { w, h, t: block + 2 * coverSheet };
+    }
+    const sub = parts.reduce((a, [, g]) => a + g, 0);
+    if (bound) parts.push(['Glue and finishing', sub * GLUE_SHARE]);
+    return { pages, sheets, added: pages - doc.pages.length, perPage: perPage(doc), estimated: !(p.caliper > 0), block, size, parts, total: parts.reduce((a, [, g]) => a + g, 0) };
+  }
+  // Files from before 0.1.10 chose a paper from a list for the spine only. Match it, and keep the
+  // exact spine they had by carrying the old figure over as the printer's thickness.
+  const OLD_PAPERS = { 'kdp-white': [90, 'uncoated', 'white'], 'kdp-cream': [90, 'uncoated', 'cream'], 'kdp-colour': [115, 'gloss', 'white'], 'uncoated-80': [80, 'uncoated', 'white'], 'uncoated-100': [100, 'uncoated', 'white'], 'silk-130': [130, 'silk', 'white'], 'silk-170': [170, 'silk', 'white'] };
+  function printFromOldPaper(cover) {
+    const p = printDefault();
+    const old = OLD_PAPERS[cover.paper];
+    if (old) [p.pagesGsm, p.pagesFinish, p.pagesShade] = old;
+    const was = cover.perPage || 0.0572;
+    if (Math.abs(estimatePerPage(p) - was) > 0.0002) p.caliper = was;
+    return p;
+  }
 
   const SWATCHES = () => [
     { id: 'sw-black', name: 'Black', c: 0, m: 0, y: 0, k: 100 },
@@ -51,7 +101,7 @@ const Model = (() => {
   const DEFAULT_FONT = 'C:\\Windows\\Fonts\\arial.ttf';
   const textStyle = (o = {}) => ({ font: DEFAULT_FONT, size: 12, leading: 15, color: { sw: 'sw-black' }, align: 'left', valign: 'top', spaceAfter: 0, indent: 0, tracking: 0, ...o });
 
-  function newDoc({ name = 'Untitled', w = 210, h = 297, bleed = 3, kind = 'print', facing = false, pages = 1, dpi = 300 } = {}) {
+  function newDoc({ name = 'Untitled', w = 210, h = 297, bleed = 3, kind = 'print', facing = false, pages = 1, dpi = 300, print = null } = {}) {
     const book = kind === 'book';
     const m = book ? { top: 15, bottom: 20, inside: 18, outside: 13 } : { top: 5, bottom: 5, inside: 5, outside: 5 };
     const doc = {
@@ -76,7 +126,8 @@ const Model = (() => {
         { id: 'st-folio', name: 'Page number', ...textStyle({ font: 'C:\\Windows\\Fonts\\georgia.ttf', size: 9, leading: 11, align: 'center' }) },
       ],
       assets: {},
-      cover: { enabled: book, paper: 'kdp-white', perPage: 0.0572, spineExtra: 0, bleed: 3, items: [], inside: { enabled: false, items: [] }, layout: 'spread', order: 'outside-first' },
+      cover: { enabled: book, spineExtra: 0, bleed: 3, items: [], inside: { enabled: false, items: [] }, layout: 'spread', order: 'outside-first' },
+      print: { ...printDefault(), ...(print || {}) },
       created: Date.now(),
       ownTextSettings: true,
     };
@@ -198,7 +249,7 @@ const Model = (() => {
   }
   function cover(doc) {
     const c = doc.cover;
-    const per = c.perPage || 0.0572;
+    const per = perPage(doc);
     const spine = Math.max(0, coverPages(doc) * per + (c.spineExtra || 0));
     const w = doc.w * 2 + spine;
     // The inside of the cover is the same sheet turned over: inside front on the left, inside back
@@ -385,7 +436,10 @@ const Model = (() => {
 
   // Older files and files from templates: fill in anything newer versions added.
   function normalise(doc) {
-    doc.cover = { enabled: false, paper: 'kdp-white', perPage: 0.0572, spineExtra: 0, bleed: 3, items: [], ...(doc.cover || {}) };
+    doc.cover = { enabled: false, spineExtra: 0, bleed: 3, items: [], ...(doc.cover || {}) };
+    doc.print = doc.print ? { ...printDefault(), ...doc.print } : printFromOldPaper(doc.cover);
+    delete doc.cover.paper;
+    delete doc.cover.perPage;
     doc.cover.inside = { enabled: false, items: [], ...(doc.cover.inside || {}) };
     doc.cover.layout = doc.cover.layout === 'single' ? 'single' : 'spread';
     doc.cover.order = doc.cover.order === 'reading' ? 'reading' : 'outside-first';
@@ -412,7 +466,7 @@ const Model = (() => {
   }
 
   return {
-    PRESETS, PAPERS, DEFAULT_FONT, textStyle, newDoc, newPage, newItem, itemLabel, typeName, addPageNumbers,
+    PRESETS, FINISHES, SHADES, printDefault, sheetMm, estimatePerPage, perPage, bookSpecs, DEFAULT_FONT, textStyle, newDoc, newPage, newItem, itemLabel, typeName, addPageNumbers,
     spreads, side, pageNumber, margins, master, masterItems, masterSource, overrideMasterItem, syncOverrides, cover, coverPages, isInside, coverSurfaces, surfaceName, isSingle, isCoverPage, surfaceOrigin, coverSurfaceFor, onSurface,
     surfaceItems, surfaceSize, surfaceSide, sameSurface, allSurfaces, printedSurfaces, findItem,
     resolveColor, colorName, ink, styleOf, applyStyle, chainOf, usedAssets, pruneAssets, normalise,

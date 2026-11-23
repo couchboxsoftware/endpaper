@@ -444,14 +444,13 @@ const Panels = (() => {
   function coverProps() {
     const { doc } = S();
     const c = Model.cover(doc);
-    const paper = Model.PAPERS.find((p) => p.id === doc.cover.paper) || Model.PAPERS[Model.PAPERS.length - 1];
     const single = Model.isSingle(doc);
     const inside = Model.isInside(S().surface);
     return `<section><h5>Cover</h5>
       <p class="big-num">${c.spine.toFixed(2)} mm <span class="muted">spine</span></p>
-      <p class="hint">Worked out from ${Model.coverPages(doc)} pages × ${doc.cover.perPage} mm per page${doc.cover.spineExtra ? ` + ${doc.cover.spineExtra} mm` : ''}. Check the number with your printer before you send it.</p>
-      <div class="field field-wide"><span>Paper</span><select class="input" data-paper="1">${Model.PAPERS.map((p) => `<option value="${p.id}" ${p.id === paper.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
-      <div class="grid2">${num('Per page', 'c.perPage', doc.cover.perPage, 'mm')}${num('Extra', 'c.spineExtra', doc.cover.spineExtra || 0, 'mm')}${len('Bleed', 'c.bleed', doc.cover.bleed)}</div>
+      <p class="hint">Worked out from ${Model.coverPages(doc)} pages × ${Number(Model.perPage(doc).toFixed(4))} mm a page${doc.cover.spineExtra ? ` + ${doc.cover.spineExtra} mm` : ''}. Check the number with your printer before you send it.</p>
+      <div class="field field-wide"><span>Paper</span><div class="paper-line"><span>${esc(Shipment.summary(doc))}</span><button class="btn btn-sm" data-act="shipment" title="Paper, binding and the weight of a copy (File, Shipment preparation)">Change…</button></div></div>
+      <div class="grid2">${num('Extra', 'c.spineExtra', doc.cover.spineExtra || 0, 'mm')}${len('Bleed', 'c.bleed', doc.cover.bleed)}</div>
       <p class="hint">Whole cover ${Units.label(c.w, U(), doc.dpi)} × ${Units.label(c.h, U(), doc.dpi)} plus bleed. Keep text 6 mm inside the violet lines${single ? '' : ', and spine text inside the spine'}.</p></section>
       <section><h5>Layout</h5>
       <div class="field field-wide"><span>Cover as</span><select class="input" data-cover-layout-select>
@@ -490,7 +489,6 @@ const Panels = (() => {
         else if (f === 'd.dpi') doc.dpi = clamp(Math.round(v), 30, 2400);
         else if (f === 'd.pageStart') doc.pageStart = Math.max(1, Math.round(v));
         else if (f.startsWith('d.m.')) doc.margins[f.slice(4)] = clamp(v, 0, 500);
-        else if (f === 'c.perPage') (doc.cover.perPage = clamp(v, 0.001, 2)), (doc.cover.paper = 'custom');
         else if (f === 'c.spineExtra') doc.cover.spineExtra = clamp(v, -50, 100);
         else if (f === 'c.bleed') doc.cover.bleed = clamp(v, 0, 25);
       }, { thumbs: 'all', title: f === 'd.name' });
@@ -563,13 +561,6 @@ const Panels = (() => {
     if (el.dataset.pagemaster !== undefined) return App.change('Apply master', () => (doc.pages[S().surface.idx].master = el.value || null), { thumbs: 'all' });
     if (el.dataset.coverLayoutSelect !== undefined) return App.setCoverLayout(el.value);
     if (el.dataset.coverOrder !== undefined) return App.change('Cover page order', () => (doc.cover.order = el.value), { thumbs: 'all' });
-    if (el.dataset.paper) {
-      const p = Model.PAPERS.find((x) => x.id === el.value);
-      return App.change('Paper', () => {
-        doc.cover.paper = p.id;
-        if (p.perPage) doc.cover.perPage = p.perPage;
-      });
-    }
     if (el.dataset.range === 'zoom') return;
   }
 
@@ -617,6 +608,7 @@ const Panels = (() => {
       if (a === 'story') return Story.open(it);
       if (a === 'link') return startLink(it);
       if (a === 'unlink') return App.change('Stop continuing', () => (it.next = null));
+      if (a === 'shipment') return Shipment.open();
       if (a === 'reset-master') return App.resetToMaster(Editor.selectedItems());
       if (a === 'reset-style') return App.change('Reset to style', () => { for (const x of Editor.selectedItems()) if (x.type === 'text' && x.styleId) Model.applyStyle(doc, x, doc.styles.find((s) => s.id === x.styleId)); });
       if (a === 'style-from') return newStyleFrom(it);

@@ -147,6 +147,8 @@ function createWindow() {
   });
   win.loadURL('app://endpaper/renderer/index.html');
   if (process.env.ENDPAPER_TEST) {
+    // Checks run one after another, so the window can end up hidden; keep its animations at full speed.
+    win.webContents.setBackgroundThrottling(false);
     win.webContents.on('console-message', (e) => console.log('[page]', e.message));
     win.webContents.once('did-finish-load', async () => {
       try {
