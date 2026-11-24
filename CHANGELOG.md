@@ -19,6 +19,20 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.15 · 24 Nov 2026
+Paste your story and set how it looks, with the pages changing as you go.
+
+### New
+- Place text opens beside the pages, and your text appears on them as you paste or type. Nothing is kept until you press Done; Cancel puts everything back.
+- Set the look while you place it: text style, font, weight, size, leading, letter spacing, space after paragraphs, indent, colour and alignment. The pages reflow with every change.
+- Add pages if it needs more (Place text) adds pages after your range as the text grows, and takes them away again if it shrinks.
+- Format story (Type, Format story…, or right-click linked text) changes how placed text looks later. If it no longer fits, add the pages it needs, or remove empty ones at the end.
+- Save as new style… keeps the look as a text style, and Update changes the style you picked.
+
+### Improved
+- Changing the font, size or colour of linked text in Properties changes all of it, from any of its boxes.
+- Placing text is one step to undo, including any pages it added.
+
 ## 0.1.14 · 24 Nov 2026
 Paste your whole story and it flows across the pages.
 
