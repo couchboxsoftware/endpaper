@@ -1,7 +1,7 @@
 {
   "name": "endpaper",
   "productName": "Endpaper",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "Print-ready layouts and books, in CMYK.",
   "main": "main.js",
   "author": "Couchbox Software",
