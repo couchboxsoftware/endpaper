@@ -11,7 +11,11 @@
    Sizes that should look the same at any resolution (blur, sharpen, grain, halftone dots) are in
    mm on the page; render() is told how many source pixels make a millimetre (pxPerMm). Colours
    (duotone, overlay, shadow) are whatever the caller uses; render() turns them into RGB with
-   env.color(ref) -> [r, g, b]. */
+   env.color(ref) -> [r, g, b]. Texture pictures are the caller's too: render() is given
+   texture(ref, pixels, seed) -> { img, tiles } (renderer/texturegen.js draws the built-in ones).
+
+   Settings (params) are range, select, toggle, colour, curve, texture or shuffle. One with
+   when(p) only shows while that's true (Texture's Size only when tiling, for example). */
 const PhotoFX = (() => {
   const clamp8 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v);
   const lum = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -30,6 +34,22 @@ const PhotoFX = (() => {
     for (let v = 0; v < 256; v++) l[v] = fn(v);
     return l;
   };
+  // A picture with mirrored copies beside and below it, so tiling it shows no hard joins.
+  const mirrors = new WeakMap();
+  function mirrored(img) {
+    if (mirrors.has(img)) return mirrors.get(img);
+    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    const c = document.createElement('canvas');
+    c.width = 2 * w;
+    c.height = 2 * h;
+    const g = c.getContext('2d');
+    for (const [sx, sy] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
+      g.setTransform(sx, 0, 0, sy, sx < 0 ? 2 * w : 0, sy < 0 ? 2 * h : 0);
+      g.drawImage(img, 0, 0);
+    }
+    mirrors.set(img, c);
+    return c;
+  }
   // Brightness from a 0..255 luminance curve, keeping each pixel's colour.
   function applyLumaLut(d, lut) {
     for (let i = 0; i < d.length; i += 4) {
@@ -387,6 +407,92 @@ const PhotoFX = (() => {
         applyLut(d, lutOf((v) => Math.round((v / 255) * n) * (255 / n)));
       },
     },
+    // A texture picture laid over the photo. The picture comes from env.texture(ref, pixels, seed),
+    // which returns { img, tiles } or null (still loading); the caller decides what refs mean.
+    texture: {
+      name: 'Texture', group: 'Detail and look', defStrength: 70,
+      params: [
+        { k: 'tex', label: 'Texture', type: 'texture', def: { kind: 'preset', id: 'canvas' } },
+        { k: 'layout', label: 'Lay out', type: 'select', def: 'tile', options: [['tile', 'Tile'], ['stretch', 'Stretch']] },
+        { ...range('size', 'Size', 3, 300, 25, 1, ' mm'), when: (p) => p.layout !== 'stretch' },
+        { ...range('zoom', 'Zoom', 100, 400, 100, 1, '%'), when: (p) => p.layout === 'stretch' },
+        range('angle', 'Angle', -180, 180, 0, 1, '°'),
+        range('moveX', 'Move across', -100, 100, 0, 0.5, ' mm'),
+        range('moveY', 'Move down', -100, 100, 0, 0.5, ' mm'),
+        { k: 'blend', label: 'Blend', type: 'select', def: 'multiply', options: [['multiply', 'Multiply'], ['overlay', 'Overlay'], ['soft-light', 'Soft light'], ['screen', 'Screen'], ['normal', 'Normal']] },
+        range('contrast', 'Contrast', -100, 100, 0),
+        range('brightness', 'Brightness', -100, 100, 0),
+        { k: 'colour', label: 'Colour', type: 'select', def: 'own', options: [['own', 'Its own colours'], ['grey', 'Grey'], ['tint', 'Tint']] },
+        { k: 'tint', label: 'Tint colour', type: 'colour', def: { c: 0, m: 35, y: 70, k: 25 }, when: (p) => p.colour === 'tint' },
+        { k: 'invert', label: 'Invert', type: 'toggle', def: false },
+        { k: 'mirror', label: 'Mirror tiles', type: 'toggle', def: false, when: (p) => p.layout !== 'stretch' },
+        { k: 'seed', label: 'Variation', type: 'shuffle', def: 1, when: (p) => !p.tex || p.tex.kind === 'preset' },
+      ],
+      run(d, w, h, p, env) {
+        const ppm = env.pxPerMm;
+        const tile = Math.max(2, p.size * ppm);
+        const want = p.layout === 'stretch' ? (Math.max(w, h) * p.zoom) / 100 : tile;
+        const src = env.texture && env.texture(p.tex, want, p.seed);
+        if (!src || !src.img) return;
+        const img = src.img;
+        const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+        // Lay the texture out on a canvas the size of the photo.
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        const g = c.getContext('2d', { willReadFrequently: true });
+        g.imageSmoothingQuality = 'high';
+        g.translate(w / 2 + p.moveX * ppm, h / 2 + p.moveY * ppm);
+        g.rotate((p.angle * Math.PI) / 180);
+        if (p.layout === 'stretch') {
+          const s = Math.max(w / iw, h / ih) * (p.zoom / 100);
+          g.drawImage(img, (-iw * s) / 2, (-ih * s) / 2, iw * s, ih * s);
+        } else {
+          const pat = g.createPattern(p.mirror ? mirrored(img) : img, 'repeat');
+          pat.setTransform(new DOMMatrix().scaleSelf(tile / iw, tile / ih));
+          g.fillStyle = pat;
+          const R = Math.hypot(w, h) + Math.abs(p.moveX * ppm) + Math.abs(p.moveY * ppm);
+          g.fillRect(-R, -R, 2 * R, 2 * R);
+        }
+        const t = g.getImageData(0, 0, w, h).data;
+        // The texture's own look: contrast, brightness, invert, then grey or tint.
+        const C = p.contrast * 2.55, cf = (259 * (C + 255)) / (255 * (259 - C)), B = p.brightness * 1.28;
+        const look = lutOf((v) => {
+          const x = (v - 128) * cf + 128 + B;
+          return p.invert ? 255 - clamp8(x) : x;
+        });
+        const tint = p.colour === 'tint' ? env.color(p.tint) : null;
+        const mode = p.blend;
+        const mix = (b, x) => {
+          if (mode === 'multiply') return (b * x) / 255;
+          if (mode === 'screen') return 255 - ((255 - b) * (255 - x)) / 255;
+          if (mode === 'overlay') return b < 128 ? (2 * b * x) / 255 : 255 - (2 * (255 - b) * (255 - x)) / 255;
+          if (mode === 'soft-light') {
+            const bb = b / 255, xx = x / 255;
+            return 255 * ((1 - 2 * xx) * bb * bb + 2 * xx * bb);
+          }
+          return x;
+        };
+        for (let i = 0; i < d.length; i += 4) {
+          const a = t[i + 3] / 255;
+          if (!a) continue;
+          let r = t[i], gg = t[i + 1], b = t[i + 2];
+          if (p.colour !== 'own') r = gg = b = lum(r, gg, b);
+          r = look[r | 0];
+          gg = look[gg | 0];
+          b = look[b | 0];
+          if (tint) {
+            const L = r / 255;
+            r = tint[0] + (255 - tint[0]) * L;
+            gg = tint[1] + (255 - tint[1]) * L;
+            b = tint[2] + (255 - tint[2]) * L;
+          }
+          d[i] = d[i] + (mix(d[i], r) - d[i]) * a;
+          d[i + 1] = d[i + 1] + (mix(d[i + 1], gg) - d[i + 1]) * a;
+          d[i + 2] = d[i + 2] + (mix(d[i + 2], b) - d[i + 2]) * a;
+        }
+      },
+    },
 
     /* ----- Shape and blending ----- */
     flip_rotate: {
@@ -441,7 +547,8 @@ const PhotoFX = (() => {
   /* ---------- rendering ---------- */
   // The picture with its geometric and pixel effects, at `scale` × the source's size.
   // env: { pxPerMm: source pixels per mm on the page, color(ref) -> [r, g, b], seed }
-  function render(source, effects, { scale = 1, pxPerMm = 12, color = () => [0, 0, 0], seed = 1 } = {}) {
+  // texture(ref, pixels, seed) -> { img, tiles } or null: where Texture effects get their pictures.
+  function render(source, effects, { scale = 1, pxPerMm = 12, color = () => [0, 0, 0], seed = 1, texture = null } = {}) {
     const sw = source.naturalWidth || source.width, sh = source.naturalHeight || source.height;
     const g = geometry(effects);
     const tw = Math.max(1, Math.round(sw * scale)), th = Math.max(1, Math.round(sh * scale));
@@ -460,7 +567,7 @@ const PhotoFX = (() => {
     if (!list.length) return c;
     const img = ctx.getImageData(0, 0, c.width, c.height);
     const d = img.data;
-    const env = { pxPerMm: pxPerMm * scale, color, seed };
+    const env = { pxPerMm: pxPerMm * scale, color, seed, texture };
     for (const e of list) {
       const t = TYPES[e.type];
       const p = { ...Object.fromEntries(t.params.map((q) => [q.k, q.def])), ...e.p };

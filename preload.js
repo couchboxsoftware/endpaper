@@ -9,7 +9,7 @@ const channels = [
   'image:pick', 'fonts:list', 'fonts:read', 'fonts:add',
   'inkdesktop:find', 'inkdesktop:open', 'inkdesktop:get', 'file:open-default', 'file:show-folder',
   'icc:list', 'icc:read', 'icc:add',
-  'brandkit:get', 'brandkit:set',
+  'brandkit:get', 'brandkit:set', 'textures:list', 'textures:read', 'textures:add', 'textures:update', 'textures:remove',
   'templates:list', 'templates:save', 'templates:read', 'templates:delete',
   'bin:list', 'bin:restore', 'bin:empty',
   'recovery:write', 'recovery:clear', 'recovery:list', 'recovery:read',

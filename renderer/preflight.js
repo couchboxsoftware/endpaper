@@ -30,6 +30,11 @@ const Preflight = (() => {
             const ppi = Math.round(Render.ppi(it));
             if (ppi < 200) add('error', `${name} is ${ppi} ppi and will print blurry. Make it smaller or use a bigger photo (300 ppi is best).`, s, it);
             else if (ppi < 280) add('warn', `${name} is ${ppi} ppi. 300 ppi is best for print.`, s, it);
+            // Your own textures, at the size they're laid over the photo.
+            for (const e of PhotoFX.active(orig.effects).filter((x) => x.type === 'texture')) {
+              const tp = Textures.ppi(doc, orig, e);
+              if (tp != null && tp < 150) add('warn', `${name}'s texture “${Textures.nameOf(doc, e.p.tex)}” is ${Math.round(tp)} ppi at this size and may print soft. Make it smaller in the effect, or use a bigger texture.`, s, it);
+            }
           }
         }
         if (it.type === 'text') {

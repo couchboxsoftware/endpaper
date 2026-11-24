@@ -27,9 +27,13 @@ const PhotoEdit = (() => {
     const key = [it.asset, s.toFixed(5), (it.s || 0).toFixed(6), JSON.stringify(fx), JSON.stringify(fx.filter((e) => /duotone|colour_overlay/.test(e.type)).map((e) => Object.values(e.p).filter((v) => v && v.sw).map((v) => Model.resolveColor(doc, v))))].join('|');
     let v = cache.get(key);
     if (!v) {
-      const img = PhotoFX.render(a.img, it.effects, { scale: s, pxPerMm: it.s ? 1 / it.s : 12, color: colourOf(doc), seed: seedOf(it) });
+      // A texture still loading: draw without it for now, and don't keep the result.
+      let missing = false;
+      const texture = Textures.resolver(doc, { onMissing: () => (missing = true) });
+      const img = PhotoFX.render(a.img, it.effects, { scale: s, pxPerMm: it.s ? 1 / it.s : 12, color: colourOf(doc), seed: seedOf(it), texture });
       const d = dims(it, a);
       v = { img, w: d.w, h: d.h, get url() { return this._url || (this._url = img.toDataURL('image/jpeg', 0.92)); } };
+      if (missing) return v;
       cache.set(key, v);
       if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
     } else {
@@ -38,6 +42,8 @@ const PhotoEdit = (() => {
     }
     return v;
   }
+  // An effect's name in lists: Texture shows which texture.
+  const labelOf = (doc, e) => (e.type === 'texture' ? `Texture · ${Textures.nameOf(doc, e.p && e.p.tex)}` : PhotoFX.TYPES[e.type]?.name || e.type);
   // Grain is the same every time for a frame, but differs between frames.
   const seedOf = (it) => [...String(it.id || 'x')].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) | 0, 7) || 1;
 
@@ -191,6 +197,7 @@ const PhotoEdit = (() => {
     const color = colourOf(doc);
     const seed = seedOf(it);
     const pxPerMm = (it.s ? 1 / it.s : 12) * ps; // preview pixels per mm on the page
+    const texture = Textures.resolver(doc, { onLoaded: () => ((lastKey = ''), repaint()) });
 
     const m = openModal({
       title: `Edit photo · ${doc.assets[it.asset]?.name || 'Photo'}`,
@@ -237,7 +244,7 @@ const PhotoEdit = (() => {
       g.fillRect(0, 0, cv.width, cv.height);
       const key = JSON.stringify(PhotoFX.active(d.effects).filter((e) => !PhotoFX.TYPES[e.type].frame));
       if (key !== lastKey) {
-        lastImg = PhotoFX.render(src, d.effects, { scale: 1, pxPerMm, color, seed });
+        lastImg = PhotoFX.render(src, d.effects, { scale: 1, pxPerMm, color, seed, texture });
         lastKey = key;
       }
       const dm = dims(d, a);
@@ -255,7 +262,7 @@ const PhotoEdit = (() => {
       q('.pe-list').innerHTML = rows.length
         ? rows.map((e) => `<div class="pe-row${e.id === selId ? ' on' : ''}${e.on ? '' : ' off'}" data-fx="${e.id}" draggable="true">
             <button class="pe-eye" data-pe="eye" title="${e.on ? 'Hide this effect' : 'Show this effect'}">${e.on ? '◉' : '◌'}</button>
-            <span class="pe-name">${esc(T[e.type].name)}</span>
+            <span class="pe-name">${esc(labelOf(doc, e))}</span>
             <button class="pe-x" data-pe="remove" title="Remove this effect">✕</button><span class="pe-grip" title="Drag to reorder">≡</span></div>`).join('')
         : '<p class="hint">No effects yet. Use + Add to put one on.</p>';
       renderSettings();
@@ -265,7 +272,8 @@ const PhotoEdit = (() => {
       const box = q('.pe-settings');
       if (!e) return (box.innerHTML = '');
       const t = T[e.type];
-      const fields = t.params.map((p) => control(e, p)).join('');
+      const all = { ...Object.fromEntries(t.params.map((q) => [q.k, q.def])), ...e.p };
+      const fields = t.params.filter((p) => !p.when || p.when(all)).map((p) => control(e, p)).join('');
       const strength = t.frame || t.geometric ? '' : control(e, { k: '__strength', label: 'Strength', type: 'range', min: 0, max: 100, step: 1, unit: '%' });
       box.innerHTML = `<div class="pe-set-head"><h5>${esc(t.name)}</h5><button class="btn btn-sm btn-ghost" data-pe="reset" title="Put this effect's settings back to how they started">Reset</button></div>
         ${t.histogram && e.type !== 'curves' ? '<canvas class="pe-hist" width="256" height="70"></canvas>' : ''}
@@ -275,6 +283,16 @@ const PhotoEdit = (() => {
       if (t.histogram || e.type === 'curves') drawHistogram(e);
       const curve = box.querySelector('.pe-curve');
       if (curve) bindCurve(curve, e);
+      const tx = box.querySelector('.pe-texture');
+      if (tx)
+        Textures.picker(tx, doc, e.p.tex, (ref, c) => {
+          e.p.tex = ref;
+          // Drawn textures come with a size that suits them; one that doesn't tile gets mirrored.
+          if (c.kind === 'preset' && c.mm) e.p.size = c.mm;
+          e.p.mirror = !c.tiles;
+          renderList();
+          repaint();
+        });
     }
     const valOf = (e, k) => (k === '__strength' ? e.strength : e.p[k]);
     function control(e, p) {
@@ -288,6 +306,8 @@ const PhotoEdit = (() => {
         const c = Model.resolveColor(doc, v);
         return `<div class="pe-field"><span>${esc(p.label)}</span><button class="btn btn-sm pe-colour" data-colour="${p.k}"><i style="background:${Color.css(c)}"></i>${esc(Model.colorName ? Model.colorName(doc, v) : '')}</button></div>`;
       }
+      if (p.type === 'texture') return '<div class="pe-texture"></div>';
+      if (p.type === 'shuffle') return `<div class="pe-field"><span>${esc(p.label)}</span><button class="btn btn-sm pe-shuffle" data-shuffle="${p.k}" title="A fresh variation of this texture">Shuffle ↻</button></div>`;
       if (p.type === 'curve') return `<div class="pe-curve-box"><canvas class="pe-curve" width="256" height="256" data-k="${p.k}"></canvas><p class="hint">Drag the points. Click the line to add a point; drag a point off the box to remove it.</p></div>`;
       return '';
     }
@@ -297,7 +317,7 @@ const PhotoEdit = (() => {
       const c = q('.pe-hist') || q('.pe-curve');
       if (!c) return;
       const upTo = work.slice(0, work.indexOf(e));
-      const img = PhotoFX.render(src, upTo, { scale: Math.min(1, 300 / Math.max(src.width, src.height)), pxPerMm, color, seed });
+      const img = PhotoFX.render(src, upTo, { scale: Math.min(1, 300 / Math.max(src.width, src.height)), pxPerMm, color, seed, texture });
       const bins = PhotoFX.histogram(img);
       const max = Math.max(...bins.slice(2, 254)) || 1;
       const g = c.getContext('2d');
@@ -423,6 +443,12 @@ const PhotoEdit = (() => {
           return renderSettings(), repaint();
         }
       }
+      const shuf = ev.target.closest('[data-shuffle]');
+      if (shuf) {
+        const cur = work.find((x) => x.id === selId);
+        if (cur) cur.p[shuf.dataset.shuffle] = 1 + Math.floor(Math.random() * 99999);
+        return repaint();
+      }
       const cb = ev.target.closest('[data-colour]');
       if (cb) {
         const cur = work.find((x) => x.id === selId);
@@ -445,6 +471,8 @@ const PhotoEdit = (() => {
       else e.p[k] = v;
       const out = t.parentElement.querySelector('output');
       if (out) out.textContent = fmt(v, p || { unit: '%' });
+      // Some settings show or hide others (Tile shows Size, Stretch shows Zoom, Tint shows its colour).
+      if (ev.type === 'change' && t.type !== 'range' && T[e.type].params.some((x) => x.when)) renderSettings();
       repaint();
     };
     el.addEventListener('input', onField);
@@ -539,12 +567,17 @@ const PhotoEdit = (() => {
         const v = e.p[k];
         if (v && v.sw) colours[v.sw] = Model.resolveColor(doc, v);
       });
-    clip = { effects: JSON.parse(JSON.stringify(effects)), colours };
+    // Your own textures go too, so they can be pasted into another design.
+    const textures = {};
+    for (const id of Model.usedTextures(doc, [{ effects }])) if (doc.textures && doc.textures[id]) textures[id] = doc.textures[id];
+    clip = { effects: JSON.parse(JSON.stringify(effects)), colours, textures };
     App.status(`Copied ${countText(effects.length)}. Select photos and choose Paste effects (Ctrl+Alt+V).`);
     App.render();
   }
   // Fresh copies of the copied effects, using colours this design has.
   function fromClip(doc) {
+    doc.textures = doc.textures || {};
+    for (const [id, t] of Object.entries(clip.textures || {})) if (!doc.textures[id]) (doc.textures[id] = t), Textures.load(doc, id);
     return clip.effects.map((e) => {
       const c = JSON.parse(JSON.stringify(e));
       c.id = PhotoFX.make(e.type).id;
@@ -620,7 +653,7 @@ const PhotoEdit = (() => {
   // The Effects list in a photo's Properties.
   function propsHtml(it) {
     const list = [...(it.effects || [])].reverse();
-    return `<div class="pe-quick">${list.length ? list.map((e) => `<div class="pe-qrow${e.on ? '' : ' off'}"><button class="pe-eye" data-fx-toggle="${e.id}" title="${e.on ? 'Hide' : 'Show'} ${esc(PhotoFX.TYPES[e.type]?.name || '')}">${e.on ? '◉' : '◌'}</button><span>${esc(PhotoFX.TYPES[e.type]?.name || e.type)}</span></div>`).join('') : '<p class="hint">No effects yet.</p>'}</div>
+    return `<div class="pe-quick">${list.length ? list.map((e) => `<div class="pe-qrow${e.on ? '' : ' off'}"><button class="pe-eye" data-fx-toggle="${e.id}" title="${e.on ? 'Hide' : 'Show'} ${esc(PhotoFX.TYPES[e.type]?.name || '')}">${e.on ? '◉' : '◌'}</button><span>${esc(labelOf(App.S.doc, e))}</span></div>`).join('') : '<p class="hint">No effects yet.</p>'}</div>
       <div class="btn-row pe-btns"><button class="btn btn-sm" data-act="edit-photo" title="Edit photo (Ctrl+Shift+E)">Edit photo…</button>${copyBtn(it)}${pasteBtn(1)}</div>`;
   }
 

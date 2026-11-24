@@ -515,3 +515,16 @@ body.test-version .mb-test { display: inline-block; }
 .pe-qrow.off span { color: var(--faint); text-decoration: line-through; }
 .pe-head-btns { display: flex; gap: 4px; }
 .pe-btns { flex-wrap: wrap; }
+/* Texture picker (Texture effect) */
+.pe-texture { margin: 6px 0 10px; }
+.tx-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.tx-sw { position: relative; display: flex; flex-direction: column; gap: 3px; padding: 3px; background: var(--panel-2); border: 1px solid transparent; border-radius: 7px; cursor: pointer; text-align: left; min-width: 0; }
+.tx-sw:hover { border-color: #4a4752; }
+.tx-sw.on { border-color: var(--accent); }
+.tx-img { display: block; width: 100%; aspect-ratio: 1; border-radius: 5px; background: #e9e7ee center / cover no-repeat; }
+.tx-name { font-size: 11px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.tx-tag { position: absolute; top: 6px; left: 6px; font-style: normal; font-size: 10px; line-height: 1; padding: 2px 4px; border-radius: 4px; font-weight: 600; }
+.tx-tag.tiles { background: #1d3b2c; color: #7ee0ad; }
+.tx-tag.one { background: #3d2f14; color: #f5c46a; }
+.tx-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.tx-actions .hint { margin: 0; font-size: 11px; }

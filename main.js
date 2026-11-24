@@ -615,7 +615,45 @@ handle('icc:add', async () => {
 });
 
 /* ---------- brand kit ---------- */
-handle('brandkit:get', () => readJSON(user('brandkit.json'), { swatches: [], styles: [], logos: [], fonts: [] }));
+/* ---------- your own textures (for the Texture photo effect) ----------
+   userData/textures holds each picture as a file, and index.json lists them: id, name, mime,
+   w, h and whether it tiles. Designs keep their own copy of any texture they use. */
+const texDir = () => ensureDir(user('textures'));
+const texIndex = () => readJSON(path.join(texDir(), 'index.json'), []);
+const texSave = (list) => writeJSON(path.join(texDir(), 'index.json'), list);
+const texFile = (t) => path.join(texDir(), t.id + (Object.entries(IMG_MIME).find(([, m]) => m === t.mime)?.[0] || '.png'));
+const texSafe = (s) => String(s || '').replace(/[^\w-]/g, '').slice(0, 40);
+handle('textures:list', () => texIndex());
+handle('textures:read', (id) => {
+  const t = texIndex().find((x) => x.id === id);
+  return t && fs.existsSync(texFile(t)) ? fs.readFileSync(texFile(t)) : null;
+});
+handle('textures:add', ({ id, name, mime, bytes, w, h, tiles }) => {
+  const t = { id: texSafe(id), name: String(name || 'Texture').slice(0, 120), mime: IMG_MIME[Object.keys(IMG_MIME).find((k) => IMG_MIME[k] === mime)] || 'image/png', w: w | 0, h: h | 0, tiles: !!tiles };
+  if (!t.id) return null;
+  fs.writeFileSync(texFile(t), Buffer.from(bytes));
+  texSave([...texIndex().filter((x) => x.id !== t.id), t]);
+  return t;
+});
+handle('textures:update', (id, patch = {}) => {
+  const list = texIndex();
+  const t = list.find((x) => x.id === id);
+  if (!t) return null;
+  if (patch.name != null) t.name = String(patch.name).slice(0, 120);
+  if (patch.tiles != null) t.tiles = !!patch.tiles;
+  texSave(list);
+  return t;
+});
+handle('textures:remove', (id) => {
+  const list = texIndex();
+  const t = list.find((x) => x.id === id);
+  if (!t) return false;
+  try { fs.unlinkSync(texFile(t)); } catch {}
+  texSave(list.filter((x) => x.id !== id));
+  return true;
+});
+
+handle('brandkit:get',() => readJSON(user('brandkit.json'), { swatches: [], styles: [], logos: [], fonts: [] }));
 handle('brandkit:set', (kit) => writeJSON(user('brandkit.json'), kit));
 
 /* ---------- templates and the bin ---------- */

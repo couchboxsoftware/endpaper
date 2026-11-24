@@ -126,6 +126,7 @@ const Model = (() => {
         { id: 'st-folio', name: 'Page number', ...textStyle({ font: 'C:\\Windows\\Fonts\\georgia.ttf', size: 9, leading: 11, align: 'center' }) },
       ],
       assets: {},
+      textures: {}, // your own textures used by photo effects: id -> { name, mime, data, w, h, tiles }
       cover: { enabled: book, spineExtra: 0, bleed: 3, items: [], inside: { enabled: false, items: [] }, layout: 'spread', order: 'outside-first' },
       print: { ...printDefault(), ...(print || {}) },
       created: Date.now(),
@@ -432,6 +433,19 @@ const Model = (() => {
   function pruneAssets(doc) {
     const used = usedAssets(doc);
     for (const k of Object.keys(doc.assets)) if (!used.has(k)) delete doc.assets[k];
+    pruneTextures(doc);
+  }
+  // Your own textures that photo effects use (the drawn ones need nothing saved).
+  function usedTextures(doc, items) {
+    const used = new Set();
+    const list = items || allSurfaces(doc).flatMap((s) => surfaceItems(doc, s));
+    for (const it of list) for (const e of it.effects || []) if (e.type === 'texture' && e.p && e.p.tex && e.p.tex.kind === 'own') used.add(e.p.tex.id);
+    return used;
+  }
+  function pruneTextures(doc) {
+    if (!doc.textures) return;
+    const used = usedTextures(doc);
+    for (const k of Object.keys(doc.textures)) if (!used.has(k)) delete doc.textures[k];
   }
 
   // Older files and files from templates: fill in anything newer versions added.
@@ -447,6 +461,7 @@ const Model = (() => {
     doc.styles = doc.styles || [];
     doc.swatches = doc.swatches || SWATCHES();
     doc.assets = doc.assets || {};
+    doc.textures = doc.textures || {};
     doc.dpi = doc.dpi || 300;
     doc.pageStart = doc.pageStart || 1;
     // Files from before 0.1.4 linked boxes to their style. Give each box its own copy of exactly
@@ -469,6 +484,6 @@ const Model = (() => {
     PRESETS, FINISHES, SHADES, printDefault, sheetMm, estimatePerPage, perPage, bookSpecs, DEFAULT_FONT, textStyle, newDoc, newPage, newItem, itemLabel, typeName, addPageNumbers,
     spreads, side, pageNumber, margins, master, masterItems, masterSource, overrideMasterItem, syncOverrides, cover, coverPages, isInside, coverSurfaces, surfaceName, isSingle, isCoverPage, surfaceOrigin, coverSurfaceFor, onSurface,
     surfaceItems, surfaceSize, surfaceSide, sameSurface, allSurfaces, printedSurfaces, findItem,
-    resolveColor, colorName, ink, styleOf, applyStyle, chainOf, usedAssets, pruneAssets, normalise,
+    resolveColor, colorName, ink, styleOf, applyStyle, chainOf, usedAssets, pruneAssets, usedTextures, pruneTextures, normalise,
   };
 })();

@@ -26,6 +26,7 @@ const Assets = (() => {
   const get = (id) => imgs.get(id) || null;
   async function ensureDoc(doc) {
     await Promise.all(Object.keys(doc.assets).map((id) => load(doc, id)));
+    if (typeof Textures !== 'undefined') await Textures.ensureDoc(doc); // your own textures, for photo effects
   }
   // Adds a photo file to the document; the same photo twice is stored once.
   async function add(doc, { name, mime, bytes }) {

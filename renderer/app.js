@@ -29,7 +29,7 @@ const App = (() => {
     redo: [],
     pending: null,
     snap() {
-      const { assets, ...rest } = S.doc;
+      const { assets, textures, ...rest } = S.doc; // photos and textures only ever get added, so undo leaves them be
       return JSON.stringify(rest);
     },
     begin() {
@@ -54,9 +54,10 @@ const App = (() => {
       this.pending = null;
     },
     restore(state, surface) {
-      const assets = S.doc.assets;
+      const assets = S.doc.assets, textures = S.doc.textures;
       S.doc = JSON.parse(state);
       S.doc.assets = assets;
+      S.doc.textures = textures;
       if (surface) S.surface = surface;
       validateSurface();
       S.sel = new Set([...S.sel].filter((id) => Model.findItem(S.doc, id)));
@@ -276,8 +277,10 @@ const App = (() => {
     if (name === 'copy' || name === 'cut') {
       const assets = {};
       for (const it of sel) if (it.asset) assets[it.asset] = S.doc.assets[it.asset];
+      const textures = {};
+      for (const id of Model.usedTextures(S.doc, sel)) if (S.doc.textures[id]) textures[id] = S.doc.textures[id];
       // org: where the copied page starts, so a paste onto a cover page lands in the same place on it.
-      S.clip = { items: clone(sel), assets, org: Model.surfaceOrigin(S.doc, S.surface) };
+      S.clip = { items: clone(sel), assets, textures, org: Model.surfaceOrigin(S.doc, S.surface) };
       if (name === 'copy') return status(`Copied ${sel.length} item${sel.length === 1 ? '' : 's'}`);
     }
     if (name === 'delete' || name === 'cut') {
@@ -322,6 +325,7 @@ const App = (() => {
     if (!S.clip) return;
     change('Paste', () => {
       Object.assign(S.doc.assets, S.clip.assets);
+      Object.assign(S.doc.textures, S.clip.textures || {});
       const list = Model.surfaceItems(S.doc, S.surface);
       const shift = Model.surfaceOrigin(S.doc, S.surface) - (S.clip.org || 0);
       const copies = S.clip.items.map((it) => ({ ...clone(it), id: uid('i'), next: null, x: it.x + shift }));

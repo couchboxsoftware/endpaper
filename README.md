@@ -55,6 +55,8 @@ This checks the changelog entry, that everything's committed, that the GitHub CL
 - `renderer/bookview.js`: Preview book (View, Preview book): the design as a book you can page through and turn over.
 - `renderer/shipment.js`: Shipment preparation (File, Shipment preparation): the paper and binding, and the size and weight of a copy. The sums are `Model.bookSpecs` in `renderer/model.js`.
 - `renderer/photofx.js`: the photo effects engine (light, colour, detail, shape and blending). It knows nothing about Endpaper, so it can be lifted into another app.
+- `renderer/texturegen.js`: the drawn textures for the Texture effect (paper, canvas, linen and the rest), made to repeat seamlessly, and the check for whether any picture repeats. Like `photofx.js`, it knows nothing about Endpaper.
+- `renderer/textures.js`: your own textures: the library on this computer (kept in the `textures` folder of Endpaper's settings folder), the copy each design keeps, and the texture picker in Edit photo.
 - `renderer/photoedit.js`: photo effects in Endpaper: the Edit photo window (Object, Edit photo), the effects list in Properties, and drawing a frame's effects on the page, in thumbnails and in the PDF.
 - `renderer/inkdesktop.js`: what opens after export, and the "Do you want to try Inkdesktop?" window, in Inkdesktop's own colours and pen nib.
 - `renderer/util.js`: shared helpers: `$`, `esc`, toasts, windows, menus.

@@ -19,6 +19,18 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.13 · 24 Nov 2026
+Lay paper, canvas, grain and your own textures over your photos.
+
+### New
+- Texture, a new photo effect (Edit photo, Add, Detail and look), lays a texture over the photo: tiled at a size in mm, or stretched over it.
+- 11 ready-made textures, drawn sharp at any size: fine paper, watercolour paper, canvas, linen, kraft card, recycled specks, crumpled paper, concrete, grunge, film dust and wood grain. Shuffle gives a fresh variation.
+- Add your own textures (JPG, PNG or WebP) to a library you can use in every design. A design keeps a copy of any texture it uses, so it opens anywhere.
+- Every texture is tagged Tiles or Doesn't tile. Endpaper checks your own when you add them; right-click one to change its tag, rename it or remove it from your library.
+- A texture that doesn't tile is mirrored when tiled, so no hard joins show.
+- Settings for angle, position, blend (Multiply, Overlay, Soft light, Screen, Normal), contrast, brightness, colour (its own, grey or a tint) and invert.
+- Check warns when one of your own textures would print soft at the size you've set.
+
 ## 0.1.12 · 24 Nov 2026
 Give your photos the same look in one go, and Layers sits next to Properties.
 
