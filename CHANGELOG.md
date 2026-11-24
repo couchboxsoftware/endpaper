@@ -19,6 +19,18 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.14 · 24 Nov 2026
+Paste your whole story and it flows across the pages.
+
+### New
+- Place text (Insert, Place text…) takes a long text you paste and puts it in a text box inside the margins of each page, from one page to another, with the text flowing from page to page.
+- A line with just --- starts a new page. Empty lines can start a new page too, or leave a gap on the same page (Place text, Empty lines). Endpaper remembers your choice.
+- Place text shows how many pages the text needs as you paste. If it needs more than you chose, add the pages it needs or stop at your last page.
+- Pick the text style the text uses, and undo the whole thing in one go.
+
+### Improved
+- Typing in the Story window updates the thumbnail of every page the text runs through.
+
 ## 0.1.13 · 24 Nov 2026
 Lay paper, canvas, grain and your own textures over your photos.
 
