@@ -19,6 +19,17 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.12 · 24 Nov 2026
+Give your photos the same look in one go, and Layers sits next to Properties.
+
+### New
+- Copy effects and Paste effects (Ctrl+Alt+C and Ctrl+Alt+V) copy a photo's effects onto other photos. They're in the photo's Properties, its right-click menu, the Object and Edit menus, and the Edit photo window.
+- Select several photos to paste onto all of them at once.
+- If a photo already has effects, Endpaper asks whether to replace them or add the copied ones on top.
+
+### Improved
+- Layers is in the right panel, next to Properties. The left panel shows Pages.
+
 ## 0.1.11 · 24 Nov 2026
 Layer effects on your photos, like a photo editor.
 

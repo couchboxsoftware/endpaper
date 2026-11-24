@@ -23,8 +23,11 @@ const Panels = (() => {
     $('#left-body').addEventListener('click', onLeftClick);
     $('#left-body').addEventListener('contextmenu', onLeftContext);
     $('#left-body').addEventListener('dblclick', onLeftDbl);
-    layersDnD();
     const rb = $('#right-body');
+    rb.addEventListener('click', onLayerClick);
+    rb.addEventListener('contextmenu', onLayerContext);
+    rb.addEventListener('dblclick', onLayerDbl);
+    layersDnD();
     rb.addEventListener('change', onFieldChange);
     rb.addEventListener('keydown', onFieldKey);
     rb.addEventListener('click', onRightClick);
@@ -38,10 +41,8 @@ const Panels = (() => {
 
   /* ================= LEFT ================= */
   function renderLeft() {
-    const tab = S().leftTab || 'pages';
-    $$('#left-tabs [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
-    if (tab === 'pages') renderPages();
-    else renderLayers();
+    $$('#left-tabs [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === 'pages'));
+    renderPages();
   }
 
   // 'inside' / 'outside' (or nothing), and optionally 'front' / 'back' for single cover pages.
@@ -61,7 +62,7 @@ const Panels = (() => {
     else dirtyThumbs.add(skey(surface));
   }
   const refreshThumbsSoon = debounce(() => {
-    if ((S().leftTab || 'pages') === 'pages') renderPages();
+    renderPages();
   }, 350);
 
   function renderPages() {
@@ -154,6 +155,10 @@ const Panels = (() => {
       const [a, b] = cv.dataset.cover.split(':');
       return App.goTo(coverFromKey(a, b));
     }
+  }
+  /* ---------- Layers (in the right panel, next to Properties) ---------- */
+  function onLayerClick(e) {
+    const { doc } = S();
     const row = e.target.closest('[data-layer]');
     if (row) {
       const id = row.dataset.layer;
@@ -170,13 +175,24 @@ const Panels = (() => {
       } else App.select([id]);
     }
   }
-  function onLeftDbl(e) {
+  function onLayerDbl(e) {
     const { doc } = S();
     const row = e.target.closest('[data-layer]');
     if (row) {
       const it = Model.findItem(doc, row.dataset.layer)?.item;
       if (it) prompt('Name', it.name || Model.itemLabel(it)).then((v) => v != null && App.change('Rename', () => (it.name = v.trim())));
     }
+  }
+  function onLayerContext(e) {
+    const row = e.target.closest('[data-layer]');
+    if (row) {
+      e.preventDefault();
+      if (!S().sel.has(row.dataset.layer)) App.select([row.dataset.layer]);
+      Editor.stage.dispatchEvent(new MouseEvent('contextmenu', { clientX: e.clientX, clientY: e.clientY, bubbles: true }));
+    }
+  }
+  function onLeftDbl(e) {
+    const { doc } = S();
     const m = e.target.closest('.master-name');
     if (m) {
       const ms = Model.master(doc, m.closest('[data-master]').dataset.master);
@@ -220,12 +236,6 @@ const Panels = (() => {
         }, { thumbs: 'all' }) },
       ]);
     }
-    const row = e.target.closest('[data-layer]');
-    if (row) {
-      e.preventDefault();
-      if (!S().sel.has(row.dataset.layer)) App.select([row.dataset.layer]);
-      Editor.stage.dispatchEvent(new MouseEvent('contextmenu', { clientX: e.clientX, clientY: e.clientY, bubbles: true }));
-    }
   }
 
   const ICON = { text: 'T', image: '▣', rect: '■', ellipse: '●', line: '╱' };
@@ -249,12 +259,15 @@ const Panels = (() => {
         for (let i = mi.length - 1; i >= 0; i--) html += `<div class="layer from-master"><span class="lic">${ICON[mi[i].type]}</span><span class="lname">${esc(Model.itemLabel(mi[i]))}</span></div>`;
       }
     }
-    $('#left-body').innerHTML = html + '</div>';
+    const host = $('#right-body');
+    const st = host.scrollTop;
+    host.innerHTML = html + '</div>';
+    host.scrollTop = st;
   }
-  const refreshLayers = debounce(() => (S().leftTab === 'layers' ? renderLayers() : null), 200);
+  const refreshLayers = debounce(() => (S().rightTab === 'layers' ? renderLayers() : null), 200);
 
   function layersDnD() {
-    const host = $('#left-body');
+    const host = $('#right-body');
     let dragId = null;
     host.addEventListener('dragstart', (e) => {
       const r = e.target.closest('[data-layer]');
@@ -295,6 +308,7 @@ const Panels = (() => {
     const tab = S().rightTab || 'props';
     $$('#right-tabs [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
     if (tab === 'props') renderProps();
+    else if (tab === 'layers') renderLayers();
     else if (tab === 'colours') renderColours();
     else if (tab === 'brand') renderBrand();
     else renderCheck();
@@ -413,6 +427,7 @@ const Panels = (() => {
       ${items.length > 2 ? `<div class="field field-wide"><span>Spread out</span><div class="seg"><button data-align="dist-h">Across</button><button data-align="dist-v">Down</button></div></div>` : ''}
       <div class="grid2">${num('Opacity', 'opacity', Math.round((items[0].opacity ?? 1) * 100), '%')}</div>
       <div class="btn-row"><button class="btn btn-sm" data-act="duplicate">Duplicate</button><button class="btn btn-sm btn-danger-ghost" data-act="delete">Delete</button></div></section>
+      ${PhotoEdit.multiHtml(items)}
       ${items.some((x) => x.type === 'text') ? textSection(items.filter((x) => x.type === 'text')) : ''}`;
   }
 
@@ -618,6 +633,8 @@ const Panels = (() => {
       if (a === 'replace-photo') return App.pickPhotoFor(it);
       if (a === 'crop') return App.startCrop(it);
       if (a === 'edit-photo') return PhotoEdit.open(it);
+      if (a === 'copy-effects') return PhotoEdit.copyEffects(it);
+      if (a === 'paste-effects') return PhotoEdit.pasteEffects(Editor.selectedItems());
       if (a === 'swap') return App.change('Swap size', () => ([doc.w, doc.h] = [doc.h, doc.w]), { thumbs: 'all' });
       if (a === 'page-numbers') return App.change('Page numbers', () => Model.addPageNumbers(doc), { thumbs: 'all' });
       if (['lock', 'duplicate', 'delete'].includes(a)) return App.cmd(a);

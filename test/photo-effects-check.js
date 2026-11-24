@@ -14,7 +14,7 @@ if (require.main === module) {
   module.exports = async ({ exec, shot }) => {
     const { check, waitFor, appReady, wait } = H.inApp({ exec });
     await appReady();
-    const key = (k, mods = {}) => exec(`window.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(k)}, ctrlKey: ${!!mods.ctrl}, shiftKey: ${!!mods.shift}, bubbles: true, cancelable: true }))`);
+    const key = (k, mods = {}) => exec(`window.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(k)}, ctrlKey: ${!!mods.ctrl}, shiftKey: ${!!mods.shift}, altKey: ${!!mods.alt}, bubbles: true, cancelable: true }))`);
     const shots = process.env.ENDPAPER_TEST_SHOTS;
 
     // A design with two pages and a test photo: red on the left half, blue on the right.
@@ -168,6 +168,69 @@ if (require.main === module) {
       return t;
     })()`);
     check('the right-click menu has Edit photo…', /Edit photo…/.test(ctx), ctx);
+    // Copy effects from one photo, paste onto others.
+    await exec(`(() => {
+      const d = App.S.doc;
+      App.change('Two more photos', () => {
+        for (const [k, x] of [['__b', 20], ['__c', 80]]) {
+          const it = Model.newItem('image', x, 110, 45, 35, d); it.asset = window.__aid; Render.fitImage(it, d.assets[window.__aid], 'fill');
+          if (k === '__b') { const fr = PhotoFX.make('flip_rotate'); fr.p.flipH = false; it.effects = [PhotoFX.make('blur'), fr]; }
+          d.pages[0].items.push(it); window[k] = it.id;
+        }
+      });
+      App.select([window.__id]);
+    })()`);
+    await wait(200);
+    check('Properties has Copy effects and Paste effects', await exec(`!!document.querySelector('[data-act="copy-effects"]:not([disabled])') && !!document.querySelector('[data-act="paste-effects"][disabled]')`));
+    await key('c', { ctrl: true, alt: true });
+    await wait(150);
+    check('Ctrl+Alt+C copies them, and Paste effects is ready', await exec(`PhotoEdit.hasClip() && !!document.querySelector('[data-act="paste-effects"]:not([disabled])')`));
+    const srcTypes = await exec(`${IT}.effects.map((e) => e.type).join(',')`);
+    const typesOf = (k) => exec(`Model.findItem(App.S.doc, window.${k}).item.effects.map((e) => e.type).join(',')`);
+    // A photo with no effects: pasted straight away.
+    await exec(`App.select([window.__c])`);
+    await wait(100);
+    await key('v', { ctrl: true, alt: true });
+    await wait(200);
+    check('Ctrl+Alt+V pastes onto a photo with no effects without asking', !(await exec(`!!document.querySelector('.modal.pe-paste')`)) && (await typesOf('__c')) === srcTypes, await typesOf('__c'));
+    check('...as copies of their own', await exec(`Model.findItem(App.S.doc, window.__c).item.effects[0].id !== ${IT}.effects[0].id`));
+    // Two photos, one with effects: it asks.
+    await exec(`App.select([window.__b, window.__c])`);
+    await wait(150);
+    check('with two photos selected, Properties offers Paste effects onto 2', /Paste effects onto 2/.test(await exec(`document.querySelector('[data-act="paste-effects"]').textContent`)));
+    await exec(`document.querySelector('[data-act="paste-effects"]').click()`);
+    check('pasting onto a photo with effects asks first', await waitFor(() => exec(`!!document.querySelector('.modal.pe-paste')`), 2000));
+    await exec(`document.querySelector('.modal.pe-paste [data-a="add"]').click()`);
+    await wait(200);
+    const added = await typesOf('__b');
+    check('Add on top keeps its own and adds the copied ones (one flip and rotate)', added === 'blur,' + srcTypes && added.split(',').filter((t) => t === 'flip_rotate').length === 1, added);
+    await key('z', { ctrl: true });
+    await wait(150);
+    check('Ctrl+Z takes the paste back', (await typesOf('__b')) === 'blur,flip_rotate', await typesOf('__b'));
+    await key('v', { ctrl: true, alt: true });
+    await waitFor(() => exec(`!!document.querySelector('.modal.pe-paste')`), 2000);
+    await exec(`document.querySelector('.modal.pe-paste [data-a="replace"]').click()`);
+    await wait(200);
+    check('Replace gives both photos exactly the copied effects', (await typesOf('__b')) === srcTypes && (await typesOf('__c')) === srcTypes, await typesOf('__b'));
+    const menu = await exec(`(() => {
+      const el = document.querySelector('.item[data-id="' + window.__b + '"]');
+      const r = el.getBoundingClientRect();
+      el.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 5, clientY: r.top + 5 }));
+      const t = document.querySelector('.ctx') ? document.querySelector('.ctx').textContent : '';
+      document.querySelector('.ctx') && document.querySelector('.ctx').remove();
+      return t;
+    })()`);
+    check('the right-click menu pastes onto both selected photos', /Paste effects onto 2 photos/.test(menu), menu);
+    // In the Edit photo window: Paste adds the copied effects to the list being edited.
+    await exec(`App.select([window.__b])`);
+    await wait(100);
+    await key('E', { ctrl: true, shift: true });
+    await waitFor(() => exec(`!!document.querySelector('.modal.edit-photo')`), 3000);
+    check('the Edit photo window has Copy and Paste', await exec(`!!document.querySelector('.edit-photo [data-pe="copy"]') && !document.querySelector('.edit-photo [data-pe="paste"]').disabled`));
+    if (shots) await shot(path.join(shots, 'photo-edit-copy.png'));
+    await exec(`document.querySelector('.edit-photo [data-pe="cancel"]').click()`);
+    await wait(100);
+
     if (shots) {
       await exec(`App.select([window.__id])`);
       await wait(400);

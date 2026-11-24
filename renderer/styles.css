@@ -513,3 +513,5 @@ body.test-version .mb-test { display: inline-block; }
 .pe-quick { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
 .pe-qrow { display: flex; align-items: center; gap: 6px; }
 .pe-qrow.off span { color: var(--faint); text-decoration: line-through; }
+.pe-head-btns { display: flex; gap: 4px; }
+.pe-btns { flex-wrap: wrap; }

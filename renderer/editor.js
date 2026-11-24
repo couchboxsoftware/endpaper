@@ -688,6 +688,7 @@ const Editor = (() => {
     const has = S().sel.size > 0;
     const one = selectedItems()[0];
     const fromMaster = selectedItems().filter((x) => x.masterRef);
+    const photos = PhotoEdit.photosIn(selectedItems());
     contextMenu(e.clientX, e.clientY, [
       ...(fromMaster.length ? [{ label: 'Reset to master', run: () => App.resetToMaster(fromMaster) }, '-'] : []),
       { label: 'Cut', key: 'Ctrl+X', disabled: !has, run: () => App.cmd('cut') },
@@ -700,7 +701,12 @@ const Editor = (() => {
       { label: 'Send backward', key: 'Ctrl+[', disabled: !has, run: () => App.cmd('backward') },
       { label: 'Send to back', key: 'Ctrl+Shift+[', disabled: !has, run: () => App.cmd('back') },
       '-',
-      ...(one && one.type === 'image' ? [{ label: 'Replace photo…', run: () => App.pickPhotoFor(one) }, { label: 'Adjust photo', run: () => App.startCrop(one) }, { label: 'Edit photo…', key: 'Ctrl+Shift+E', disabled: !PhotoEdit.canEdit(one), run: () => PhotoEdit.open(one) }, '-'] : []),
+      ...(one && one.type === 'image' ? [{ label: 'Replace photo…', run: () => App.pickPhotoFor(one) }, { label: 'Adjust photo', run: () => App.startCrop(one) }, { label: 'Edit photo…', key: 'Ctrl+Shift+E', disabled: !PhotoEdit.canEdit(one), run: () => PhotoEdit.open(one) }] : []),
+      ...(photos.length ? [
+        ...(photos.length === 1 && selectedItems().length === 1 ? [{ label: 'Copy effects', key: 'Ctrl+Alt+C', disabled: !PhotoEdit.hasEffects(photos[0]), run: () => PhotoEdit.copyEffects(photos[0]) }] : []),
+        { label: photos.length > 1 ? `Paste effects onto ${photos.length} photos` : 'Paste effects', key: 'Ctrl+Alt+V', disabled: !PhotoEdit.hasClip(), run: () => PhotoEdit.pasteEffects(photos) },
+      ] : []),
+      ...((one && one.type === 'image') || photos.length ? ['-'] : []),
       ...(one && one.type === 'text' ? [{ label: 'Edit text', run: () => Text.edit(one) }, { label: 'Continue in another box', run: () => Panels.startLink(one) }, '-'] : []),
       { label: one && one.locked ? 'Unlock' : 'Lock', disabled: !has, run: () => App.cmd('lock') },
       { label: 'Delete', key: 'Del', disabled: !has, run: () => App.cmd('delete') },

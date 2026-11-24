@@ -135,8 +135,7 @@ const App = (() => {
   function selectionChanged() {
     if (S.crop && !S.sel.has(S.crop)) S.crop = null;
     Editor.renderOverlay();
-    if (S.rightTab === 'props' || !S.sel.size) Panels.renderRight();
-    if (S.leftTab === 'layers') Panels.renderLeft();
+    if (S.rightTab === 'props' || S.rightTab === 'layers' || !S.sel.size) Panels.renderRight();
   }
   function goTo(surface, { keepSel = false } = {}) {
     if (S.doc && surface.kind === 'cover') surface = Model.coverSurfaceFor(S.doc, surface);
@@ -1238,6 +1237,13 @@ const App = (() => {
     if (ctrl && k.toLowerCase() === 'z') return e.preventDefault(), e.shiftKey ? history.doRedo() : history.doUndo();
     if (ctrl && k.toLowerCase() === 'y') return e.preventDefault(), history.doRedo();
     if (ctrl && k.toLowerCase() === 'a') return e.preventDefault(), cmd('selectAll');
+    // Copy and paste photo effects (Ctrl+Alt+C, Ctrl+Alt+V) before plain copy.
+    if (ctrl && e.altKey && k.toLowerCase() === 'c') {
+      e.preventDefault();
+      const one = selectedList();
+      return one.length === 1 && PhotoEdit.canEdit(one[0]) ? PhotoEdit.copyEffects(one[0]) : status('Select one photo to copy its effects.');
+    }
+    if (ctrl && e.altKey && k.toLowerCase() === 'v') return e.preventDefault(), PhotoEdit.pasteEffects(selectedList());
     if (ctrl && k.toLowerCase() === 'c') return cmd('copy');
     if (ctrl && k.toLowerCase() === 'x') return cmd('cut');
     if (ctrl && k.toLowerCase() === 'd') return e.preventDefault(), cmd('duplicate');
@@ -1375,6 +1381,8 @@ const App = (() => {
           { label: 'Cu&t', key: 'Ctrl+X', disabled: noSel, run: () => cmd('cut') },
           { label: '&Copy', key: 'Ctrl+C', disabled: noSel, run: () => cmd('copy') },
           { label: '&Paste', key: 'Ctrl+V', disabled: noDoc || !S.clip, run: () => paste() },
+          { label: 'Copy photo effects', key: 'Ctrl+Alt+C', disabled: !(sel.length === 1 && PhotoEdit.hasEffects(sel[0])), run: () => PhotoEdit.copyEffects(sel[0]) },
+          { label: 'Paste photo effects', key: 'Ctrl+Alt+V', disabled: !(PhotoEdit.hasClip() && PhotoEdit.photosIn(sel).length), run: () => PhotoEdit.pasteEffects(sel) },
           { label: '&Duplicate', key: 'Ctrl+D', disabled: noSel, run: () => cmd('duplicate') },
           { label: 'De&lete', key: 'Delete', disabled: noSel, run: () => cmd('delete') },
           '-',
@@ -1459,6 +1467,8 @@ const App = (() => {
           { label: '&Lock or unlock', key: 'Ctrl+L', disabled: noSel, run: () => cmd('lock') },
           '-',
           { label: 'Edit &photo…', key: 'Ctrl+Shift+E', disabled: !(sel.length === 1 && PhotoEdit.canEdit(sel[0])), run: () => PhotoEdit.open(sel[0]) },
+          { label: 'Copy &effects', key: 'Ctrl+Alt+C', disabled: !(sel.length === 1 && PhotoEdit.hasEffects(sel[0])), run: () => PhotoEdit.copyEffects(sel[0]) },
+          { label: 'Paste effec&ts', key: 'Ctrl+Alt+V', disabled: !(PhotoEdit.hasClip() && PhotoEdit.photosIn(sel).length), run: () => PhotoEdit.pasteEffects(sel) },
         ],
       },
       {

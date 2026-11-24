@@ -202,7 +202,7 @@ const PhotoEdit = (() => {
           <div class="pe-under"><button class="btn btn-sm" data-pe="before" title="Hold to see the photo without its effects">Before / After</button><span class="muted pe-note">Hold to compare with the photo as it was.</span></div>
         </div>
         <div class="pe-right">
-          <div class="pe-head"><h5>Effects</h5><button class="btn btn-sm" data-pe="add">+ Add</button></div>
+          <div class="pe-head"><h5>Effects</h5><div class="pe-head-btns"><button class="btn btn-sm btn-ghost" data-pe="copy" title="Copy these effects, to paste onto another photo (Ctrl+Alt+C)">Copy</button><button class="btn btn-sm btn-ghost" data-pe="paste" title="Paste effects you copied (Ctrl+Alt+V)">Paste</button><button class="btn btn-sm" data-pe="add">+ Add</button></div></div>
           <div class="pe-list"></div>
           <p class="hint pe-order">Top is applied last, like layers. Drag to reorder.</p>
           <div class="pe-settings"></div>
@@ -407,6 +407,8 @@ const PhotoEdit = (() => {
       if (b) {
         const a2 = b.dataset.pe;
         if (a2 === 'add') return addMenu(b);
+        if (a2 === 'copy') return copyWork();
+        if (a2 === 'paste') return pasteWork();
         if (a2 === 'cancel') return m.close();
         if (a2 === 'done') return finish();
         if (a2 === 'eye' && e) return (e.on = !e.on), renderList(), repaint();
@@ -474,6 +476,31 @@ const PhotoEdit = (() => {
       repaint();
     });
 
+    // Copy and paste inside the window work on the effects being edited; Done still saves them.
+    function copyWork() {
+      if (!work.length) return toast('Add an effect first, then copy.');
+      copyEffects(work);
+      toast(`Copied ${countText(work.length)}.`);
+      syncPaste();
+    }
+    async function pasteWork() {
+      if (!clip) return toast('Copy effects from a photo first.');
+      const mode = work.length ? await chooseMode(false) : 'replace';
+      if (!mode) return;
+      work = merged(work, fromClip(doc), mode);
+      selId = work.length ? work[work.length - 1].id : null;
+      renderList();
+      repaint();
+    }
+    const syncPaste = () => (q('[data-pe="paste"]').disabled = !clip);
+    // Ctrl+Alt+C and Ctrl+Alt+V while the window is open.
+    el.addEventListener('keydown', (ev) => {
+      if (!(ev.ctrlKey && ev.altKey) || ev.target.matches('input[type="number"], input[type="text"]')) return;
+      const k = ev.key.toLowerCase();
+      if (k === 'c') ev.preventDefault(), copyWork();
+      if (k === 'v') ev.preventDefault(), pasteWork();
+    });
+
     function finish() {
       const effects = JSON.parse(JSON.stringify(work));
       App.change('Edit photo', () => {
@@ -487,7 +514,101 @@ const PhotoEdit = (() => {
     }
 
     renderList();
+    syncPaste();
     requestAnimationFrame(paint);
+  }
+
+  /* ---------- copy and paste effects ---------- */
+  // Kept for this session, so effects can go from one photo to the next, even in another design.
+  let clip = null; // { effects, colours: swatch id -> its CMYK when copied }
+  const photosIn = (items) => (items || []).filter(canEdit);
+  const hasEffects = (it) => !!it && (it.effects || []).length > 0;
+  const hasClip = () => !!clip;
+  const countText = (n) => `${n} effect${n === 1 ? '' : 's'}`;
+  function colourParams(e, fn) {
+    for (const p of PhotoFX.TYPES[e.type]?.params || []) if (p.type === 'colour') fn(p.k);
+  }
+  // Copies a photo's effects (or a list of them, from the Edit photo window).
+  function copyEffects(src) {
+    const effects = Array.isArray(src) ? src : src && src.effects;
+    if (!effects || !effects.length) return App.status('This photo has no effects to copy yet.');
+    const doc = App.S.doc;
+    const colours = {};
+    for (const e of effects)
+      colourParams(e, (k) => {
+        const v = e.p[k];
+        if (v && v.sw) colours[v.sw] = Model.resolveColor(doc, v);
+      });
+    clip = { effects: JSON.parse(JSON.stringify(effects)), colours };
+    App.status(`Copied ${countText(effects.length)}. Select photos and choose Paste effects (Ctrl+Alt+V).`);
+    App.render();
+  }
+  // Fresh copies of the copied effects, using colours this design has.
+  function fromClip(doc) {
+    return clip.effects.map((e) => {
+      const c = JSON.parse(JSON.stringify(e));
+      c.id = PhotoFX.make(e.type).id;
+      colourParams(c, (k) => {
+        const v = c.p[k];
+        if (v && v.sw && !doc.swatches.some((s) => s.id === v.sw)) c.p[k] = JSON.parse(JSON.stringify(clip.colours[v.sw] || { c: 0, m: 0, y: 0, k: 100 }));
+      });
+      return c;
+    });
+  }
+  // Replace, or add on top. A photo has one of each frame effect, so a pasted one takes its place.
+  function merged(existing, pasted, mode) {
+    if (mode === 'replace') return pasted;
+    const once = new Set(pasted.filter((e) => ONCE.has(e.type)).map((e) => e.type));
+    return [...(existing || []).filter((e) => !once.has(e.type)), ...pasted];
+  }
+  // Asks whether to replace a photo's own effects or add the copied ones on top.
+  function chooseMode(several) {
+    return new Promise((resolve) => {
+      const n = clip.effects.length;
+      const m = openModal({
+        title: 'Paste effects',
+        cls: 'pe-paste',
+        body: `<p class="muted">${several ? 'Some of these photos already have effects.' : 'This photo already has effects.'} Replace them with the ${countText(n)} you copied, or add ${n === 1 ? 'it' : 'them'} on top?</p>
+          <p class="hint">Ctrl+Z puts things back either way.</p>
+          <div class="modal-actions"><button class="btn btn-ghost" data-a="cancel">Cancel</button><button class="btn" data-a="add">Add on top</button><button class="btn btn-accent" data-a="replace" autofocus>Replace</button></div>`,
+        onClose: (v) => resolve(v || null),
+      });
+      m.el.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-a]');
+        if (b) m.close(b.dataset.a === 'cancel' ? null : b.dataset.a);
+      });
+    });
+  }
+  // Pastes onto every selected photo; other selected things are left alone.
+  async function pasteEffects(items) {
+    const targets = photosIn(items);
+    if (!clip) return App.status('Copy effects from a photo first (Ctrl+Alt+C).');
+    if (!targets.length) return App.status('Select a photo to paste effects onto.');
+    let mode = 'replace';
+    if (targets.some(hasEffects)) mode = await chooseMode(targets.length > 1);
+    if (!mode) return;
+    const doc = App.S.doc;
+    App.change('Paste effects', () => {
+      for (const it of targets) {
+        const a = Assets.get(it.asset);
+        const was = dims(it, a);
+        it.effects = merged(it.effects, fromClip(doc), mode);
+        const now = dims(it, a);
+        // A turn of 90° changes the photo's shape, so fit it in its frame again.
+        if (was.w !== now.w || was.h !== now.h) Render.fitImage(it, a, it.fit === 'fit' ? 'fit' : 'fill');
+      }
+    }, { thumbs: 'all' });
+    App.status(`Pasted ${countText(clip.effects.length)} onto ${targets.length === 1 ? 'the photo' : targets.length + ' photos'}.`);
+  }
+  // The buttons in Properties.
+  const copyBtn = (it) =>
+    `<button class="btn btn-sm" data-act="copy-effects" ${hasEffects(it) ? '' : 'disabled'} title="${hasEffects(it) ? "Copy this photo's effects (Ctrl+Alt+C)" : 'No effects to copy yet'}">Copy effects</button>`;
+  const pasteBtn = (n) =>
+    `<button class="btn btn-sm" data-act="paste-effects" ${clip ? '' : 'disabled'} title="${clip ? `Paste the ${countText(clip.effects.length)} you copied (Ctrl+Alt+V)` : 'Copy effects from a photo first (Ctrl+Alt+C)'}">Paste effects${n > 1 ? ` onto ${n}` : ''}</button>`;
+  // Several things selected: paste onto all the photos among them.
+  function multiHtml(items) {
+    const n = photosIn(items).length;
+    return n ? `<section><h5>Photos <span class="muted">· ${n}</span></h5><div class="btn-row">${pasteBtn(n)}</div></section>` : '';
   }
 
   // Shows or hides one effect from the photo's Properties.
@@ -500,8 +621,11 @@ const PhotoEdit = (() => {
   function propsHtml(it) {
     const list = [...(it.effects || [])].reverse();
     return `<div class="pe-quick">${list.length ? list.map((e) => `<div class="pe-qrow${e.on ? '' : ' off'}"><button class="pe-eye" data-fx-toggle="${e.id}" title="${e.on ? 'Hide' : 'Show'} ${esc(PhotoFX.TYPES[e.type]?.name || '')}">${e.on ? '◉' : '◌'}</button><span>${esc(PhotoFX.TYPES[e.type]?.name || e.type)}</span></div>`).join('') : '<p class="hint">No effects yet.</p>'}</div>
-      <div class="btn-row"><button class="btn btn-sm" data-act="edit-photo" title="Edit photo (Ctrl+Shift+E)">Edit photo…</button></div>`;
+      <div class="btn-row pe-btns"><button class="btn btn-sm" data-act="edit-photo" title="Edit photo (Ctrl+Shift+E)">Edit photo…</button>${copyBtn(it)}${pasteBtn(1)}</div>`;
   }
 
-  return { view, dims, drawFrame, frameCss, PDF_BLEND, fadeCropped, shadowMask, fadeEdges, colourOf, seedOf, open, canEdit, toggle, propsHtml };
+  return {
+    view, dims, drawFrame, frameCss, PDF_BLEND, fadeCropped, shadowMask, fadeEdges, colourOf, seedOf,
+    open, canEdit, toggle, propsHtml, multiHtml, copyEffects, pasteEffects, hasClip, hasEffects, photosIn,
+  };
 })();
