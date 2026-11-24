@@ -100,7 +100,8 @@ const Fonts = (() => {
 })();
 
 /* Text layout: paragraphs, wrapping, alignment (justified included), first-line indents, space
-   after paragraphs, and text that continues from one box into the next. */
+   after paragraphs, and text that continues from one box into the next. In text that continues,
+   a line with just --- (a break) moves the rest on to the next box. */
 const Layout = (() => {
   let cache = new Map();
   const invalidate = () => (cache = new Map());
@@ -111,6 +112,9 @@ const Layout = (() => {
       .replace(/\{pages\}/g, String(doc.pageStart + doc.pages.length - 1))
       .replace(/\{title\}/g, doc.name || '');
   }
+
+  const BREAK = /^\s*-{3,}\s*$/;
+  const isBreak = (line) => BREAK.test(line);
 
   // Lays out a whole chain and returns the result for one box: { lines, overflow, font, size, ... }.
   function box(doc, it, ctx) {
@@ -143,12 +147,25 @@ const Layout = (() => {
     const W = (t) => Fonts.width(f, t, size, tr);
     const spaceW = W(' ');
     const text = tokens(doc, head.text || '', ctx);
-    const paras = text.split(/\r?\n/);
+    let paras = text.split(/\r?\n/);
+    // Breaks only count when the text continues into another box. Blank lines either side of a
+    // break are dropped, so a new box never starts (or a full one spills) with empty lines.
+    const chained = boxes.length > 1;
+    if (chained && paras.some(isBreak)) {
+      const drop = new Set();
+      paras.forEach((p, i) => {
+        if (!isBreak(p)) return;
+        for (let j = i - 1; j >= 0 && !paras[j].trim(); j--) drop.add(j);
+        for (let j = i + 1; j < paras.length && !paras[j].trim(); j++) drop.add(j);
+      });
+      paras = paras.filter((_, i) => !drop.has(i));
+    }
 
     let bi = 0;
     let cur = boxes[0];
     let baseline = asc;
     let done = false;
+    let fresh = false; // just after a break: no first-line indent
     // Moves to the next box when this line doesn't fit; false when there's nowhere left.
     const room = () => {
       while (!(baseline + desc <= cur.h + 0.05)) {
@@ -165,8 +182,23 @@ const Layout = (() => {
     };
 
     for (let pi = 0; pi < paras.length && !done; pi++) {
+      if (chained && isBreak(paras[pi])) {
+        // Nothing after it: nothing to move on.
+        if (!paras.slice(pi + 1).some((p) => p.trim())) break;
+        if (bi + 1 >= boxes.length) {
+          out.get(cur.id).overflow = true;
+          done = true;
+          break;
+        }
+        bi++;
+        cur = boxes[bi];
+        baseline = asc;
+        fresh = true;
+        continue;
+      }
       const words = paras[pi].split(/ +/).filter((w, i, a) => w !== '' || a.length === 1);
-      const indent = pi > 0 && st.indent ? st.indent : 0;
+      const indent = pi > 0 && !fresh && st.indent ? st.indent : 0;
+      fresh = false;
       let line = [];
       let lineW = 0;
       let first = true;
@@ -240,8 +272,17 @@ const Layout = (() => {
       }
     }
     for (const r of out.values()) Object.assign(r, { asc, desc, lead });
+    out.end = bi; // the box the text ends in
     return out;
   }
 
-  return { box, invalidate, tokens };
+  // How many boxes of w × h mm a text needs in a style, trying up to n boxes:
+  // { used, overflow } (overflow: it needs more than n).
+  function measure(doc, text, style, w, h, n) {
+    const boxes = Array.from({ length: Math.max(2, n) }, (_, i) => ({ id: 'measure' + i, w, h, text: i ? '' : text, style }));
+    const out = layoutChain(doc, boxes, null);
+    return { used: Math.min(n, out.end + 1), overflow: [...out.values()].some((r) => r.overflow) };
+  }
+
+  return { box, invalidate, tokens, measure, isBreak };
 })();

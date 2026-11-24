@@ -894,7 +894,7 @@ const Story = (() => {
     m = openModal({
       title: 'Story',
       cls: 'story',
-      body: `<p class="muted">All the text in this box and the boxes it continues into. Type here and the pages update as you go.</p>
+      body: `<p class="muted">All the text in this box and the boxes it continues into. Type here and the pages update as you go. A line with just --- moves the rest on to the next box.</p>
         <textarea class="story-text" spellcheck="true"></textarea>
         <div class="modal-actions"><span class="muted story-info"></span><button class="btn btn-accent" data-a="done">Done</button></div>`,
       onClose: () => {
@@ -909,7 +909,8 @@ const Story = (() => {
       const chain = Model.chainOf(doc, head.id);
       const last = chain[chain.length - 1].it;
       const L = Layout.box(doc, last, null);
-      $('.story-info', m.el).textContent = `${chain.length} box${chain.length === 1 ? '' : 'es'} · ${(head.text || '').trim().split(/\s+/).filter(Boolean).length} words${L.overflow ? ' · more text than fits' : ''}`;
+      const words = (head.text || '').split(/\r?\n/).filter((l) => !Layout.isBreak(l)).join(' ').trim().split(/\s+/).filter(Boolean).length;
+      $('.story-info', m.el).textContent = `${chain.length} box${chain.length === 1 ? '' : 'es'} · ${words} words${L.overflow ? ' · more text than fits' : ''}`;
     };
     info();
     const upd = debounce(() => {
@@ -917,10 +918,12 @@ const Story = (() => {
       Layout.invalidate();
       App.markDirty();
       Editor.render();
-      // Redraw the thumbnails the text shows on (every cover page, if it's on the cover).
-      const at = Model.findItem(doc, head.id, App.S.surface);
-      if (at && at.surface.kind === 'cover') Model.coverSurfaces(doc).forEach((s) => Panels.invalidateThumbs(s));
-      else if (at) for (const s of Editor.spreadSurfaces(doc, at.surface)) Panels.invalidateThumbs(s);
+      // Redraw the thumbnails the text shows on: every page it runs through (every cover page,
+      // if it's on the cover).
+      for (const { s } of Model.chainOf(doc, head.id)) {
+        if (s.kind === 'cover') Model.coverSurfaces(doc).forEach((c) => Panels.invalidateThumbs(c));
+        else for (const x of Editor.spreadSurfaces(doc, s)) Panels.invalidateThumbs(x);
+      }
       Panels.refreshThumbsSoon();
       info();
     }, 150);

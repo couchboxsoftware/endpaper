@@ -1423,6 +1423,7 @@ const App = (() => {
           { label: '&Text box', key: 'T', disabled: noDoc, run: tool('text') },
           { label: '&Photo frame', key: 'P', disabled: noDoc, run: tool('image') },
           { label: 'P&lace photos…', disabled: noDoc, run: async () => { const f = await ep.image.pick(true); if (f.length) placePhotos(f); } },
+          { label: 'Place te&xt…', disabled: noDoc, run: () => PlaceText.open() },
           '-',
           { label: '&Rectangle', key: 'R', disabled: noDoc, run: tool('rect') },
           { label: '&Ellipse', key: 'E', disabled: noDoc, run: tool('ellipse') },

@@ -251,6 +251,12 @@ body.linking #stage { cursor: alias; }
 .modal-actions .muted { margin-right: auto; }
 .story { width: min(760px, 96vw); }
 .story-text { width: 100%; height: 50vh; background: #fff; color: #111; border-radius: 8px; border: 0; padding: 14px; font: 15px/1.55 Georgia, serif; resize: vertical; }
+.place-text { width: min(760px, 96vw); }
+.place-text .pt-text { height: 42vh; }
+.pt-row { display: grid; grid-template-columns: 1fr 1fr 1.6fr; gap: 0 14px; margin-top: 10px; }
+.pt-row .field { grid-template-columns: auto 1fr; }
+.pt-info.warn { color: var(--warn); }
+.place-text .pt-empty { grid-template-columns: auto auto; justify-content: start; gap: 10px; margin-top: 8px; }
 .export { display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; }
 .ex-check { background: var(--panel-2); border-radius: 8px; padding: 6px 12px; }
 .ex-issues { display: flex; flex-direction: column; gap: 4px; }

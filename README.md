@@ -54,6 +54,7 @@ This checks the changelog entry, that everything's committed, that the GitHub CL
 - `renderer/hints.js`: every hint pop-up, in one list (Settings, Hints can show them again).
 - `renderer/bookview.js`: Preview book (View, Preview book): the design as a book you can page through and turn over.
 - `renderer/shipment.js`: Shipment preparation (File, Shipment preparation): the paper and binding, and the size and weight of a copy. The sums are `Model.bookSpecs` in `renderer/model.js`.
+- `renderer/placetext.js`: Place text (Insert, Place text…): a pasted text goes into a linked text box inside the margins of each page in a range, adding pages if you choose. A line with just `---` moves text that continues on to the next box (`Layout` in `renderer/fonts.js`).
 - `renderer/photofx.js`: the photo effects engine (light, colour, detail, shape and blending). It knows nothing about Endpaper, so it can be lifted into another app.
 - `renderer/texturegen.js`: the drawn textures for the Texture effect (paper, canvas, linen and the rest), made to repeat seamlessly, and the check for whether any picture repeats. Like `photofx.js`, it knows nothing about Endpaper.
 - `renderer/textures.js`: your own textures: the library on this computer (kept in the `textures` folder of Endpaper's settings folder), the copy each design keeps, and the texture picker in Edit photo.
