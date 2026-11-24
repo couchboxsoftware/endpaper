@@ -365,9 +365,10 @@ const Panels = (() => {
         ${a ? `<p class="file-line">${esc(a.name)} · ${a.w} × ${a.h} px ${ppiTag(it)}</p>` : '<p class="hint">No photo yet.</p>'}
         <div class="btn-row"><button class="btn btn-sm" data-act="replace-photo">${a ? 'Replace…' : 'Choose photo…'}</button>${a ? `<button class="btn btn-sm" data-act="crop">Adjust</button>` : ''}</div>
         ${a ? `<div class="field field-wide"><span>Fit</span>${seg('fit', it.fit, [['fill', 'Fill', 'Fill the frame (edges may be cropped)'], ['fit', 'Fit', 'Fit inside the frame (all of the photo shows)'], ['custom', 'Custom', 'Your own crop']])}</div>
-        <div class="field field-wide"><span>Zoom</span><input type="range" min="20" max="400" value="${Math.round((it.s / Math.max(it.w / a.w, it.h / a.h)) * 100)}" data-range="zoom"></div>` : ''}
+        <div class="field field-wide"><span>Zoom</span><input type="range" min="20" max="400" value="${Math.round((it.s / ((d) => Math.max(it.w / d.w, it.h / d.h))(PhotoEdit.dims(it, a))) * 100)}" data-range="zoom"></div>` : ''}
         ${colorBtn('Border', 'stroke', it.stroke)}${it.stroke ? `<div class="grid2">${len('Border', 'strokeW', it.strokeW)}</div>` : ''}
       </section>`;
+      if (a) h += `<section><h5>Effects</h5>${PhotoEdit.propsHtml(it)}</section>`;
     }
     if (it.type === 'rect' || it.type === 'ellipse') {
       h += `<section><h5>Colour</h5>${colorBtn('Fill', 'fill', it.fill)}${colorBtn('Border', 'stroke', it.stroke)}
@@ -592,6 +593,8 @@ const Panels = (() => {
       }
       return applyField(f, segBtn.dataset.v);
     }
+    const fxT = e.target.closest('[data-fx-toggle]');
+    if (fxT && it) return PhotoEdit.toggle(it, fxT.dataset.fxToggle);
     const al = e.target.closest('[data-align]');
     if (al) return App.align(al.dataset.align);
     const cb = e.target.closest('[data-color]');
@@ -614,6 +617,7 @@ const Panels = (() => {
       if (a === 'style-from') return newStyleFrom(it);
       if (a === 'replace-photo') return App.pickPhotoFor(it);
       if (a === 'crop') return App.startCrop(it);
+      if (a === 'edit-photo') return PhotoEdit.open(it);
       if (a === 'swap') return App.change('Swap size', () => ([doc.w, doc.h] = [doc.h, doc.w]), { thumbs: 'all' });
       if (a === 'page-numbers') return App.change('Page numbers', () => Model.addPageNumbers(doc), { thumbs: 'all' });
       if (['lock', 'duplicate', 'delete'].includes(a)) return App.cmd(a);
@@ -709,7 +713,8 @@ const Panels = (() => {
       const a = it && S().doc.assets[it.asset];
       if (!a) return;
       App.history.begin();
-      const base = Math.max(it.w / a.w, it.h / a.h);
+      const d = PhotoEdit.dims(it, a); // after any turn
+      const base = Math.max(it.w / d.w, it.h / d.h);
       const ns = (base * e.target.value) / 100;
       const cx = it.w / 2, cy = it.h / 2;
       it.ox = cx - (cx - it.ox) * (ns / it.s);

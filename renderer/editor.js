@@ -145,9 +145,11 @@ const Editor = (() => {
     let html;
     const W = it.w * k, H = it.h * k;
     if (it.type === 'image') {
-      const a = it.asset && Assets.get(it.asset);
+      // The photo with its effects (renderer/photoedit.js), sharp enough for this zoom.
+      const a = it.asset && PhotoEdit.view(doc, it, { scale: it.s * k * (devicePixelRatio || 1) });
       const st = Model.resolveColor(doc, it.stroke);
-      sig = ['i', it.asset, !!a, it.s, it.ox, it.oy, W, H, k, st && Color.css(st), it.strokeW].join('|');
+      Object.assign(el.style, PhotoEdit.frameCss(doc, it, k));
+      sig = ['i', it.asset, !!a, a && a.w, a && a.h, a && a.img && a.img.width, it.s, it.ox, it.oy, W, H, k, st && Color.css(st), it.strokeW, JSON.stringify(it.effects || [])].join('|');
       html = a
         ? `<img draggable="false" src="${a.url}" style="left:${it.ox * k}px;top:${it.oy * k}px;width:${a.w * it.s * k}px;height:${a.h * it.s * k}px">`
         : `<div class="img-empty"><span>${it.asset ? 'Loading…' : 'Double-click to add a photo'}</span></div>`;
@@ -284,7 +286,7 @@ const Editor = (() => {
     }
     if (S().crop) {
       const it = Model.findItem(doc, S().crop)?.item;
-      const a = it && Assets.get(it.asset);
+      const a = it && PhotoEdit.view(doc, it, { scale: it.s * k * (devicePixelRatio || 1) });
       const gg = geoFor(S().surface);
       if (it && a && gg) {
         overlay.insertAdjacentHTML(
@@ -698,7 +700,7 @@ const Editor = (() => {
       { label: 'Send backward', key: 'Ctrl+[', disabled: !has, run: () => App.cmd('backward') },
       { label: 'Send to back', key: 'Ctrl+Shift+[', disabled: !has, run: () => App.cmd('back') },
       '-',
-      ...(one && one.type === 'image' ? [{ label: 'Replace photo…', run: () => App.pickPhotoFor(one) }, { label: 'Adjust photo', run: () => App.startCrop(one) }, '-'] : []),
+      ...(one && one.type === 'image' ? [{ label: 'Replace photo…', run: () => App.pickPhotoFor(one) }, { label: 'Adjust photo', run: () => App.startCrop(one) }, { label: 'Edit photo…', key: 'Ctrl+Shift+E', disabled: !PhotoEdit.canEdit(one), run: () => PhotoEdit.open(one) }, '-'] : []),
       ...(one && one.type === 'text' ? [{ label: 'Edit text', run: () => Text.edit(one) }, { label: 'Continue in another box', run: () => Panels.startLink(one) }, '-'] : []),
       { label: one && one.locked ? 'Unlock' : 'Lock', disabled: !has, run: () => App.cmd('lock') },
       { label: 'Delete', key: 'Del', disabled: !has, run: () => App.cmd('delete') },
@@ -718,7 +720,8 @@ const Editor = (() => {
         // Zoom the photo around the pointer.
         const m = toMm(g, p);
         const lx = m.x - it.x, ly = m.y - it.y;
-        const ns = Math.max(it.s * f, Math.max(it.w / a.w, it.h / a.h) * 0.2);
+        const d = PhotoEdit.dims(it, a);
+        const ns = Math.max(it.s * f, Math.max(it.w / d.w, it.h / d.h) * 0.2);
         const r = ns / it.s;
         it.ox = lx - (lx - it.ox) * r;
         it.oy = ly - (ly - it.oy) * r;

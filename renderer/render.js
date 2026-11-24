@@ -49,6 +49,7 @@ const Render = (() => {
   // Photo placement inside its frame: fill (cover) or fit (contain), centred.
   function fitImage(it, a, mode = 'fill') {
     if (!a) return;
+    a = PhotoEdit.dims(it, a); // a turn of 90° swaps the photo's width and height
     const sx = it.w / a.w;
     const sy = it.h / a.h;
     it.s = mode === 'fit' ? Math.min(sx, sy) : Math.max(sx, sy);
@@ -110,19 +111,10 @@ const Render = (() => {
         ctx.stroke();
       }
     } else if (it.type === 'image') {
-      const a = it.asset && Assets.get(it.asset);
+      // The photo with its effects, cropped by the frame (renderer/photoedit.js).
+      PhotoEdit.drawFrame(ctx, doc, it, k);
       ctx.beginPath();
       ctx.rect(0, 0, it.w * k, it.h * k);
-      ctx.save();
-      ctx.clip();
-      if (a) {
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(a.img, it.ox * k, it.oy * k, a.w * it.s * k, a.h * it.s * k);
-      } else {
-        ctx.fillStyle = '#e8e6ef';
-        ctx.fillRect(0, 0, it.w * k, it.h * k);
-      }
-      ctx.restore();
       if (stroke && sw) (ctx.strokeStyle = Color.css(stroke)), (ctx.lineWidth = sw), ctx.stroke();
     } else if (it.type === 'text') {
       const L = Layout.box(doc, it, pc);

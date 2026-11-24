@@ -54,6 +54,8 @@ This checks the changelog entry, that everything's committed, that the GitHub CL
 - `renderer/hints.js`: every hint pop-up, in one list (Settings, Hints can show them again).
 - `renderer/bookview.js`: Preview book (View, Preview book): the design as a book you can page through and turn over.
 - `renderer/shipment.js`: Shipment preparation (File, Shipment preparation): the paper and binding, and the size and weight of a copy. The sums are `Model.bookSpecs` in `renderer/model.js`.
+- `renderer/photofx.js`: the photo effects engine (light, colour, detail, shape and blending). It knows nothing about Endpaper, so it can be lifted into another app.
+- `renderer/photoedit.js`: photo effects in Endpaper: the Edit photo window (Object, Edit photo), the effects list in Properties, and drawing a frame's effects on the page, in thumbnails and in the PDF.
 - `renderer/inkdesktop.js`: what opens after export, and the "Do you want to try Inkdesktop?" window, in Inkdesktop's own colours and pen nib.
 - `renderer/util.js`: shared helpers: `$`, `esc`, toasts, windows, menus.
 - `renderer/brand.js`: the logo (the open book), the magenta and the wordmark. Everything else reads it.

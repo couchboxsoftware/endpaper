@@ -19,6 +19,16 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.11 · 24 Nov 2026
+Layer effects on your photos, like a photo editor.
+
+### New
+- Edit photo (Object, Edit photo, or Ctrl+Shift+E) opens a photo large, with its effects listed beside it like layers: add, hide, reorder by dragging, set the strength, and hold Before / After to compare.
+- 24 effects: brightness and contrast, exposure, shadows and highlights, levels, curves, saturation and vibrance, warmth and tint, hue shift, black and white, duotone, colour overlay, invert, sharpen, blur, noise reduction, vignette, grain, halftone, threshold, posterise, flip and rotate, fade edges, blend modes and drop shadow.
+- A photo's Properties lists its effects, to switch each one on or off without opening the window. Edit photo… is there and in the right-click menu too.
+- Effects on a master's photo carry into a page's own copy (Ctrl+Shift+click), ready to change on that page. Effects you leave alone there still follow the master.
+- Effects print as they look: they're in the PDF and PNG or JPG export, with fades, shadows and blend modes kept.
+
 ## 0.1.10 · 23 Nov 2026
 Know what each copy weighs.
 

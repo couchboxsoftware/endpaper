@@ -1227,6 +1227,12 @@ const App = (() => {
     if (ctrl && e.shiftKey && k.toLowerCase() === 'p') return e.preventDefault(), BookView.toggle();
     if (BookView.isOpen()) return;
     if (!S.doc || isTyping()) return;
+    // Edit photo (Ctrl+Shift+E) before Export (Ctrl+E).
+    if (ctrl && e.shiftKey && k.toLowerCase() === 'e') {
+      e.preventDefault();
+      const one = selectedList();
+      return one.length === 1 && PhotoEdit.canEdit(one[0]) ? PhotoEdit.open(one[0]) : status('Select a photo to edit it.');
+    }
     if (ctrl && k.toLowerCase() === 'e') return e.preventDefault(), openExport();
     if (ctrl && k.toLowerCase() === 'w') return e.preventDefault(), closeDoc();
     if (ctrl && k.toLowerCase() === 'z') return e.preventDefault(), e.shiftKey ? history.doRedo() : history.doUndo();
@@ -1451,6 +1457,8 @@ const App = (() => {
           },
           '-',
           { label: '&Lock or unlock', key: 'Ctrl+L', disabled: noSel, run: () => cmd('lock') },
+          '-',
+          { label: 'Edit &photo…', key: 'Ctrl+Shift+E', disabled: !(sel.length === 1 && PhotoEdit.canEdit(sel[0])), run: () => PhotoEdit.open(sel[0]) },
         ],
       },
       {

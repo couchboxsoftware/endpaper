@@ -83,6 +83,25 @@ const Pdf = (() => {
         return node.newExtGState('GS', gstates.get(a));
       }
 
+      // Blend modes (multiply and so on) for a photo; PDF/X-4 allows them.
+      function blendGs(mode) {
+        if (!gstates.has('bm:' + mode)) gstates.set('bm:' + mode, ctx.register(ctx.obj({ Type: 'ExtGState', BM: PhotoEdit.PDF_BLEND[mode] })));
+        return node.newExtGState('GS', gstates.get('bm:' + mode));
+      }
+      // A drop shadow: the frame's shape, softened, in the shadow's CMYK colour through a soft mask.
+      function drawShadow(it, sh) {
+        const m = PhotoEdit.shadowMask(it, sh);
+        const col = Model.resolveColor(doc, sh.colour) || { c: 0, m: 0, y: 0, k: 100 };
+        const smask = ctx.register(ctx.flateStream(m.grey, { Type: 'XObject', Subtype: 'Image', Width: m.pw, Height: m.ph, ColorSpace: 'DeviceGray', BitsPerComponent: 8 }));
+        const ink = new Uint8Array([col.c, col.m, col.y, col.k].map((v) => Math.round(v * 2.55)));
+        const base = ctx.register(ctx.stream(ink, { Type: 'XObject', Subtype: 'Image', Width: 1, Height: 1, ColorSpace: 'DeviceCMYK', BitsPerComponent: 8, SMask: smask }));
+        push(op.pushGraphicsState());
+        const alpha = (it.opacity ?? 1) * (sh.opacity / 100);
+        if (alpha < 1) push(op.setGraphicsState(gs(alpha)));
+        const key = node.newXObject('Sh', base);
+        push(op.concatTransformationMatrix(m.w, 0, 0, -m.h, m.x, m.y + m.h), op.drawObject(key), op.popGraphicsState());
+      }
+
       function rectPath(x, y, w, h, r) {
         r = Math.max(0, Math.min(r || 0, w / 2, h / 2));
         if (!r) return [op.rectangle(x, y, w, h)];
@@ -133,8 +152,11 @@ const Pdf = (() => {
           if (stroke && sw) push(strokeC(stroke), op.setLineWidth(sw), op.setLineCap(0), op.moveTo(0, it.h / 2), op.lineTo(it.w, it.h / 2), op.stroke());
         } else if (it.type === 'image') {
           const img = it.asset ? await imageFor(it) : null;
+          const pfx = PhotoFX.frameEffects(it.effects);
+          if (img && pfx.shadow) drawShadow(it, pfx.shadow);
           if (img) {
             push(op.pushGraphicsState(), op.rectangle(0, 0, it.w, it.h), op.clip(), op.endPath());
+            if (pfx.blend && PhotoEdit.PDF_BLEND[pfx.blend]) push(op.setGraphicsState(blendGs(pfx.blend)));
             const key = node.newXObject('Im', img.ref);
             push(op.concatTransformationMatrix(img.w, 0, 0, -img.h, img.x, img.y + img.h), op.drawObject(key), op.popGraphicsState());
           }
@@ -216,7 +238,9 @@ const Pdf = (() => {
     async function imageFor(it) {
       const a = Assets.get(it.asset) || (await Assets.load(doc, it.asset));
       if (!a) return null;
-      const iw = a.w * it.s, ih = a.h * it.s;
+      const dm = PhotoEdit.dims(it, a); // after any turn of the photo
+      const fx = PhotoFX.frameEffects(it.effects);
+      const iw = dm.w * it.s, ih = dm.h * it.s;
       const x0 = Math.max(0, it.ox), y0 = Math.max(0, it.oy);
       const x1 = Math.min(it.w, it.ox + iw), y1 = Math.min(it.h, it.oy + ih);
       if (x1 <= x0 || y1 <= y0) return null;
@@ -226,14 +250,18 @@ const Pdf = (() => {
       const target = opts.maxPpi && ppi > opts.maxPpi ? opts.targetPpi || 300 : ppi;
       const pw = Math.max(1, Math.round(((x1 - x0) / 25.4) * target));
       const ph = Math.max(1, Math.round(((y1 - y0) / 25.4) * target));
-      const key = [it.asset, sx.toFixed(1), sy.toFixed(1), sw.toFixed(1), sh.toFixed(1), pw, ph].join('|');
+      const key = [it.asset, sx.toFixed(1), sy.toFixed(1), sw.toFixed(1), sh.toFixed(1), pw, ph, JSON.stringify(PhotoFX.active(it.effects))].join('|');
       if (!images.has(key)) {
         const c = document.createElement('canvas');
         c.width = pw;
         c.height = ph;
         const g = c.getContext('2d', { willReadFrequently: true });
         g.imageSmoothingQuality = 'high';
-        g.drawImage(a.img, sx, sy, sw, sh, 0, 0, pw, ph);
+        // The photo's effects, worked out at the size it's printed (renderer/photoedit.js).
+        const v = PhotoFX.hasPixelWork(it.effects) ? PhotoEdit.view(doc, it, { scale: Math.min(1, pw / sw) }) : a;
+        const f = (v.img.naturalWidth || v.img.width) / dm.w;
+        g.drawImage(v.img, sx * f, sy * f, sw * f, sh * f, 0, 0, pw, ph);
+        if (fx.fade) PhotoEdit.fadeCropped(g, pw, ph, it, x0, y0, x1, y1, fx.fade.width);
         const px = g.getImageData(0, 0, pw, ph).data;
         const { cmyk, alpha } = Color.imageToCmyk(px, pw, ph);
         const jpg = CmykJpeg.encode(cmyk, pw, ph, opts.quality || 92);
