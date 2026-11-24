@@ -400,7 +400,10 @@ const Panels = (() => {
     const { doc } = S();
     const it = texts[0];
     const many = texts.length > 1 ? texts.length : 0;
-    const sts = texts.map((x) => Model.styleOf(doc, x));
+    // Linked text looks the way its first box says, so that's what to show.
+    const chain = !many ? Model.chainOf(doc, it.id) : [];
+    const linked = chain.length > 1 ? chain.length : 0;
+    const sts = texts.map((x) => Model.styleOf(doc, Model.chainOf(doc, x.id)[0]?.it || x));
     const st = sts[0];
     const same = (k, d) => (sts.every((s) => (s[k] ?? d) === (st[k] ?? d)) ? st[k] ?? d : null);
     const styleIds = new Set(texts.map((x) => x.styleId || ''));
@@ -408,13 +411,13 @@ const Panels = (() => {
     const shared = styleId && doc.styles.find((s) => s.id === styleId);
     return `<section><h5>Text${many ? ` <span class="muted">· ${many} boxes</span>` : ''}</h5>
       <div class="field field-wide"><span>Style</span><select class="input" data-style-pick="1">${styleIds.size > 1 ? '<option value="-" selected>Mixed</option>' : ''}<option value="">No style</option>${doc.styles.map((s) => `<option value="${s.id}" ${styleIds.size === 1 && s.id === it.styleId ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>
-      <p class="hint">${many ? `Changes here go to the ${many} selected text boxes, and only to them.` : 'Changes here are just for this box.'}${shared ? ` ${many ? 'Their' : 'Its'} settings started from “${esc(shared.name)}”. <a href="#" data-act="reset-style">Reset to “${esc(shared.name)}”</a>` : ''}</p>
+      <p class="hint">${many ? `Changes here go to the ${many} selected text boxes, and only to them.` : linked ? `This text runs through ${linked} linked boxes. Changes here go to all of it.` : 'Changes here are just for this box.'}${shared ? ` ${many ? 'Their' : 'Its'} settings started from “${esc(shared.name)}”. <a href="#" data-act="reset-style">Reset to “${esc(shared.name)}”</a>` : ''}</p>
       ${fontPicker(same('font', ''))}
       <div class="grid2">${num('Size', 's.size', same('size'), 'pt')}${num('Leading', 's.leading', same('leading'), 'pt')}${num('Tracking', 's.tracking', same('tracking', 0), '/1000')}${num('After ¶', 's.spaceAfter', same('spaceAfter', 0), 'pt')}${num('Indent', 's.indent', same('indent', 0), 'mm')}</div>
       ${colorBtn('Colour', 's.color', st.color, false)}
       <div class="field field-wide"><span>Align</span>${seg('s.align', same('align', 'left'), [['left', '⟸', 'Left'], ['center', '≡', 'Centre'], ['right', '⟹', 'Right'], ['justify', '☰', 'Justified']])}</div>
       <div class="field field-wide"><span>Vertical</span>${seg('s.valign', same('valign', 'top'), [['top', 'Top'], ['middle', 'Middle'], ['bottom', 'Bottom']])}</div>
-      ${many ? '' : `<div class="btn-row"><button class="btn btn-sm" data-act="edit-text">Edit text</button><button class="btn btn-sm" data-act="story">Story…</button></div>
+      ${many ? '' : `<div class="btn-row"><button class="btn btn-sm" data-act="edit-text">Edit text</button><button class="btn btn-sm" data-act="story">Story…</button>${linked ? '<button class="btn btn-sm" data-act="format-story">Format story…</button>' : ''}</div>
       <div class="btn-row">${it.next ? '<button class="btn btn-sm" data-act="unlink">Stop continuing</button>' : '<button class="btn btn-sm" data-act="link">Continue in another box…</button>'}<button class="btn btn-sm" data-act="style-from">New style from this</button></div>`}
     </section>`;
   }
@@ -510,7 +513,7 @@ const Panels = (() => {
       }, { thumbs: 'all', title: f === 'd.name' });
     }
     App.change('Edit', () => {
-      for (const it of items) {
+      for (const it of f.startsWith('s.') ? Model.withLinked(doc, items) : items) {
         if (f.startsWith('s.')) {
           if (it.type !== 'text') continue;
           const k = f.slice(2);
@@ -559,7 +562,7 @@ const Panels = (() => {
       const id = el.value;
       if (id === '-') return; // "Mixed": nothing to apply
       return App.change('Apply style', () => {
-        for (const it of Editor.selectedItems()) if (it.type === 'text') Model.applyStyle(doc, it, id ? doc.styles.find((s) => s.id === id) : null);
+        for (const it of Model.withLinked(doc, Editor.selectedItems())) if (it.type === 'text') Model.applyStyle(doc, it, id ? doc.styles.find((s) => s.id === id) : null);
       });
     }
     if (el.dataset.preset) {
@@ -624,11 +627,12 @@ const Panels = (() => {
       const a = act.dataset.act;
       if (a === 'edit-text') return Text.edit(it);
       if (a === 'story') return Story.open(it);
+      if (a === 'format-story') return PlaceText.format(it);
       if (a === 'link') return startLink(it);
       if (a === 'unlink') return App.change('Stop continuing', () => (it.next = null));
       if (a === 'shipment') return Shipment.open();
       if (a === 'reset-master') return App.resetToMaster(Editor.selectedItems());
-      if (a === 'reset-style') return App.change('Reset to style', () => { for (const x of Editor.selectedItems()) if (x.type === 'text' && x.styleId) Model.applyStyle(doc, x, doc.styles.find((s) => s.id === x.styleId)); });
+      if (a === 'reset-style') return App.change('Reset to style', () => { for (const x of Model.withLinked(doc, Editor.selectedItems())) if (x.type === 'text' && x.styleId) Model.applyStyle(doc, x, doc.styles.find((s) => s.id === x.styleId)); });
       if (a === 'style-from') return newStyleFrom(it);
       if (a === 'replace-photo') return App.pickPhotoFor(it);
       if (a === 'crop') return App.startCrop(it);
@@ -652,7 +656,7 @@ const Panels = (() => {
       if (e.target.closest('[data-edit]')) return SwatchEditor.open(doc.swatches.find((s) => s.id === id));
       if (!items.length) return SwatchEditor.open(doc.swatches.find((s) => s.id === id));
       return App.change('Colour', () => {
-        for (const x of items) {
+        for (const x of Model.withLinked(doc, items)) {
           if (x.type === 'text') Model.styleOf(doc, x).color = { sw: id };
           else if (x.type === 'line' || x.type === 'image') x.stroke = { sw: id };
           else x.fill = { sw: id };
@@ -665,7 +669,7 @@ const Panels = (() => {
       if (e.target.closest('[data-edit]') || !items.some((x) => x.type === 'text')) return StyleEditor.open(doc.styles.find((s) => s.id === id));
       return App.change('Apply style', () => {
         const st = doc.styles.find((s) => s.id === id);
-        for (const x of items) if (x.type === 'text') Model.applyStyle(doc, x, st);
+        for (const x of Model.withLinked(doc, items)) if (x.type === 'text') Model.applyStyle(doc, x, st);
       });
     }
     const ks = e.target.closest('[data-kitswatch]');

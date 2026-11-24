@@ -1439,6 +1439,7 @@ const App = (() => {
             items: [['&Left', 'left'], ['&Centre', 'center'], ['&Right', 'right'], ['&Justified', 'justify']].map(([l, a]) => ({ label: l, checked: text.length && text.every((it) => Model.styleOf(doc, it).align === a), run: () => textAlign(a) })),
           },
           { label: 'Edit &story…', disabled: !story, run: () => Story.open(story) },
+          { label: 'F&ormat story…', disabled: !PlaceText.canFormat(story), run: () => PlaceText.format(story) },
           '-',
           { label: '&New text style…', disabled: noDoc, run: () => StyleEditor.open(null) },
           { label: 'Add &fonts…', run: async () => { const n = await ep.fonts.add(); if (n) { await Fonts.refresh(); toast(`Added ${n} font${n === 1 ? '' : 's'}.`); render(); } } },
@@ -1552,7 +1553,7 @@ const App = (() => {
   return {
     S, unit, history, change, render, markDirty, select, selectionChanged, goTo, setTool,
     addItem, pickPhotoFor, setPhoto, placePhotos, startCrop, endCrop, cmd, align, pageOp,
-    kit, status, zoomChanged, init, openExport, save, newDocument, loadDoc, setCoverLayout, overrideMaster, resetToMaster, openSettings,
+    kit, status, zoomChanged, init, openExport, save, newDocument, loadDoc, setCoverLayout, overrideMaster, resetToMaster, openSettings, updateTitle,
   };
 })();
 

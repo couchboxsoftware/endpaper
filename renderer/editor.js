@@ -707,7 +707,7 @@ const Editor = (() => {
         { label: photos.length > 1 ? `Paste effects onto ${photos.length} photos` : 'Paste effects', key: 'Ctrl+Alt+V', disabled: !PhotoEdit.hasClip(), run: () => PhotoEdit.pasteEffects(photos) },
       ] : []),
       ...((one && one.type === 'image') || photos.length ? ['-'] : []),
-      ...(one && one.type === 'text' ? [{ label: 'Edit text', run: () => Text.edit(one) }, { label: 'Continue in another box', run: () => Panels.startLink(one) }, '-'] : []),
+      ...(one && one.type === 'text' ? [{ label: 'Edit text', run: () => Text.edit(one) }, ...(PlaceText.canFormat(one) ? [{ label: 'Format story…', run: () => PlaceText.format(one) }] : []), { label: 'Continue in another box', run: () => Panels.startLink(one) }, '-'] : []),
       { label: one && one.locked ? 'Unlock' : 'Lock', disabled: !has, run: () => App.cmd('lock') },
       { label: 'Delete', key: 'Del', disabled: !has, run: () => App.cmd('delete') },
     ]);

@@ -187,7 +187,7 @@ const Menu = (() => {
     }
     if (altDown) altUsed = true;
     // Alt+letter opens that menu (unless a dialog is open).
-    if (e.altKey && !e.ctrlKey && e.key.length === 1 && !document.querySelector('.modal-overlay')) {
+    if (e.altKey && !e.ctrlKey && e.key.length === 1 && !document.querySelector('.modal-overlay, .blocks-menus')) {
       const i = menus.findIndex((m) => mnemonic(m.title) === e.key.toLowerCase());
       if (i >= 0) {
         e.preventDefault();
@@ -259,7 +259,7 @@ const Menu = (() => {
     // Alt pressed and let go on its own: highlight the bar, the Windows way. Again to leave it.
     e.preventDefault();
     if (open >= 0 || focusBar >= 0) return close();
-    if (document.querySelector('.modal-overlay')) return document.body.classList.remove('alt-keys');
+    if (document.querySelector('.modal-overlay, .blocks-menus')) return document.body.classList.remove('alt-keys');
     focusBar = 0;
     paintTitles();
   }

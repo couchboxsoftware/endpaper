@@ -251,12 +251,28 @@ body.linking #stage { cursor: alias; }
 .modal-actions .muted { margin-right: auto; }
 .story { width: min(760px, 96vw); }
 .story-text { width: 100%; height: 50vh; background: #fff; color: #111; border-radius: 8px; border: 0; padding: 14px; font: 15px/1.55 Georgia, serif; resize: vertical; }
-.place-text { width: min(760px, 96vw); }
-.place-text .pt-text { height: 42vh; }
-.pt-row { display: grid; grid-template-columns: 1fr 1fr 1.6fr; gap: 0 14px; margin-top: 10px; }
-.pt-row .field { grid-template-columns: auto 1fr; }
+/* Place text and Format story: a panel over the right-hand panel, beside the pages. */
+#right { position: relative; }
+.pt-panel { position: absolute; inset: 0; z-index: 20; background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; animation: pt-in 0.2s ease-out; }
+@keyframes pt-in { from { opacity: 0; transform: translateX(12px); } }
+.pt-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 4px; }
+.pt-head h3 { margin: 0; font-size: 15px; }
+.pt-scroll { flex: 1; overflow: auto; padding: 0 14px 10px; min-height: 0; }
+.pt-scroll section { margin-top: 12px; }
+.pt-text { width: 100%; height: 180px; min-height: 80px; background: #fff; color: #111; border-radius: 8px; border: 0; padding: 10px; font: 13px/1.5 Georgia, serif; resize: vertical; }
+.pt-range { display: grid; grid-template-columns: auto 1fr auto 1fr; align-items: center; gap: 6px; margin: 4px 0 8px; }
+.pt-range > span { color: var(--muted); font-size: 12px; }
+.pt-range .input { min-width: 0; width: 100%; }
+.pt-empty { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.pt-empty > span { font-size: 12px; }
+.pt-look .btn-row { margin: 2px 0 8px; }
+.pt-foot { border-top: 1px solid var(--line); padding: 10px 14px 12px; }
+.pt-info { margin: 0 0 8px; font-size: 12px; color: var(--muted); line-height: 1.45; }
 .pt-info.warn { color: var(--warn); }
-.place-text .pt-empty { grid-template-columns: auto auto; justify-content: start; gap: 10px; margin-top: 8px; }
+.pt-fit:not(:empty) { margin-bottom: 8px; }
+.pt-end { justify-content: flex-end; }
+/* While it's open, the rest of Endpaper is for looking at only. */
+body.placing #topbar > :not(.zoom), body.placing #menubar { opacity: 0.45; }
 .export { display: grid; grid-template-columns: 1.2fr 1fr; gap: 20px; }
 .ex-check { background: var(--panel-2); border-radius: 8px; padding: 6px 12px; }
 .ex-issues { display: flex; flex-direction: column; gap: 4px; }

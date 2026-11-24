@@ -423,6 +423,21 @@ const Model = (() => {
     }
     return chain;
   }
+  // The text boxes given, plus every box their text continues into or from. Text that runs
+  // through linked boxes takes its look from the first one, so a change to how it looks goes to
+  // all of them. Anything that isn't a text box passes through as it is.
+  function withLinked(doc, items) {
+    const out = new Set();
+    for (const it of items) {
+      if (it.type !== 'text' || out.has(it)) {
+        out.add(it);
+        continue;
+      }
+      for (const c of chainOf(doc, it.id)) out.add(c.it);
+      out.add(it);
+    }
+    return [...out];
+  }
 
   /* ---------- assets ---------- */
   function usedAssets(doc) {
@@ -484,6 +499,6 @@ const Model = (() => {
     PRESETS, FINISHES, SHADES, printDefault, sheetMm, estimatePerPage, perPage, bookSpecs, DEFAULT_FONT, textStyle, newDoc, newPage, newItem, itemLabel, typeName, addPageNumbers,
     spreads, side, pageNumber, margins, master, masterItems, masterSource, overrideMasterItem, syncOverrides, cover, coverPages, isInside, coverSurfaces, surfaceName, isSingle, isCoverPage, surfaceOrigin, coverSurfaceFor, onSurface,
     surfaceItems, surfaceSize, surfaceSide, sameSurface, allSurfaces, printedSurfaces, findItem,
-    resolveColor, colorName, ink, styleOf, applyStyle, chainOf, usedAssets, pruneAssets, usedTextures, pruneTextures, normalise,
+    resolveColor, colorName, ink, styleOf, applyStyle, chainOf, withLinked, usedAssets, pruneAssets, usedTextures, pruneTextures, normalise,
   };
 })();
