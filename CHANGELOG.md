@@ -19,6 +19,13 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.16 · 24 Nov 2026
+Change your story's words and look in one place, and make the right panel as wide as you like.
+
+### New
+- Format story has your text in it: change the words there and the pages update as you type, with the look settings underneath. A line with just --- starts a new page.
+- Drag the left edge of the right-hand panel to make it wider or narrower. Everything in it stretches to fit, the pages fit the space that's left, and Endpaper remembers the width. Double-click the edge to put it back.
+
 ## 0.1.15 · 24 Nov 2026
 Paste your story and set how it looks, with the pages changing as you go.
 

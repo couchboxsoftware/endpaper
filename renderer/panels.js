@@ -32,6 +32,54 @@ const Panels = (() => {
     rb.addEventListener('keydown', onFieldKey);
     rb.addEventListener('click', onRightClick);
     rb.addEventListener('contextmenu', onRightContext);
+    rightResize();
+  }
+
+  /* ---------- the right-hand panel's width ----------
+     Drag its left edge to make it wider or narrower (double-click the edge to go back). Its
+     contents stretch to fit, and the pages get the rest. The width is remembered. */
+  const RIGHT_W = 320;
+  const rightLimits = () => [300, Math.max(300, Math.min(720, Math.round(innerWidth * 0.5)))];
+  function setRightWidth(w) {
+    const [lo, hi] = rightLimits();
+    const v = Math.round(clamp(w, lo, hi));
+    $('#work').style.setProperty('--right-w', v + 'px');
+    return v;
+  }
+  function rightResize() {
+    const right = $('#right');
+    const h = document.createElement('div');
+    h.className = 'right-resize';
+    h.title = 'Drag to make this panel wider or narrower. Double-click to put it back.';
+    right.appendChild(h);
+    setRightWidth(App.S.settings.rightWidth || RIGHT_W);
+    const save = (w) => ep.settings.set({ rightWidth: w }).then((s) => (App.S.settings = s));
+    let drag = null;
+    h.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      h.setPointerCapture(e.pointerId);
+      drag = { x: e.clientX, w: right.getBoundingClientRect().width };
+      document.body.classList.add('resizing-panel');
+    });
+    h.addEventListener('pointermove', (e) => {
+      if (drag) drag.now = setRightWidth(drag.w + (drag.x - e.clientX));
+    });
+    const end = () => {
+      if (!drag) return;
+      document.body.classList.remove('resizing-panel');
+      if (drag.now) save(drag.now);
+      drag = null;
+      // The pages get the space that's left: fit them to it.
+      if (S().doc) requestAnimationFrame(() => Editor.fit());
+    };
+    h.addEventListener('pointerup', end);
+    h.addEventListener('pointercancel', end);
+    h.addEventListener('dblclick', () => {
+      save(setRightWidth(RIGHT_W));
+      if (S().doc) requestAnimationFrame(() => Editor.fit());
+    });
+    // A smaller window can't keep a panel wider than half of it.
+    window.addEventListener('resize', () => setRightWidth(App.S.settings.rightWidth || RIGHT_W));
   }
 
   function render() {

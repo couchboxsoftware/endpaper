@@ -9,8 +9,8 @@
    no longer needed. Nothing is kept until Done, which is one step to undo; Cancel puts
    everything back.
 
-   Format story: the same look settings for text that's already placed, live on all its linked
-   boxes. The page count only changes when you press Add or Remove.
+   Format story: the text and the same look settings for text that's already placed, live on all
+   its linked boxes. The page count only changes when you press Add or Remove.
 
    While the panel is open the rest of Endpaper is paused: you can look around (scroll, zoom,
    click page thumbnails) but not change anything else. */
@@ -127,12 +127,16 @@ const PlaceText = (() => {
     el.addEventListener('keydown', onKey);
     const ta = $('.pt-text', el);
     if (ta) {
+      // Place: the pasted text, tidied each time. Format: the story's own text, as it is.
+      if (mode === 'format') ta.value = Model.findItem(doc, P.headId).item.text || '';
       P.typed = debounce(() => {
-        P.raw = ta.value;
+        if (!P) return;
+        if (P.mode === 'format') Model.findItem(App.S.doc, P.headId).item.text = ta.value;
+        else P.raw = ta.value;
         live();
       }, 250);
       ta.addEventListener('input', P.typed);
-      setTimeout(() => ta.focus(), 0);
+      if (mode === 'place') setTimeout(() => ta.focus(), 0);
     }
     lock(true);
     live();
@@ -168,7 +172,8 @@ const PlaceText = (() => {
     const doc = App.S.doc;
     if (P.mode === 'format') {
       return `<div class="pt-head"><h3>Format story</h3><button class="icon-btn" data-a="cancel" title="Cancel">✕</button></div>
-        <div class="pt-scroll"><p class="hint">How this text looks, on all its linked boxes. The pages change as you go. Nothing is kept until you press Done.</p>
+        <div class="pt-scroll"><p class="hint">This text and how it looks, on all its linked boxes. The pages change as you go. A line with just --- starts a new page. Nothing is kept until you press Done.</p>
+        <textarea class="pt-text" spellcheck="true"></textarea>
         <section><h5>Look</h5><div class="pt-look"></div></section></div>
         <div class="pt-foot"><p class="pt-info"></p><div class="pt-fit"></div><div class="btn-row pt-end"><button class="btn btn-ghost" data-a="cancel">Cancel</button><button class="btn btn-accent" data-a="done">Done</button></div></div>`;
     }
@@ -500,7 +505,7 @@ const PlaceText = (() => {
 
   /* ---------- the rest of Endpaper waits ---------- */
   // Looking around is fine (scrolling, zooming, page thumbnails); changing anything isn't.
-  const OK_ZONES = '.pt-panel, .modal-overlay, .cpop, #toasts, .ctx';
+  const OK_ZONES = '.pt-panel, .modal-overlay, .cpop, #toasts, .ctx, .right-resize';
   function guard(e) {
     const t = e.target instanceof Element ? e.target : null;
     if (e.type === 'keydown') {

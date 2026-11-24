@@ -138,7 +138,17 @@ if (require.main === module) {
     await exec(`PlaceText.format(App.S.doc.pages[2].items[0])`);
     await waitFor(() => exec(`!!document.querySelector('.pt-panel')`), 2000);
     await wait(200);
-    check('Format story opens without the paste box', await exec(`!${Q('.pt-text')} && /Format story/.test(${Q('h3')}.textContent)`));
+    check('Format story opens with the text in its box', await exec(`${Q('.pt-text')}.value === App.S.doc.pages[2].items[0].text && /Format story/.test(${Q('h3')}.textContent)`));
+    // Editing the words there changes the pages as you type; Cancel puts them back.
+    const words0 = await exec(`App.S.doc.pages[2].items[0].text`);
+    await type('Brand new opening line.\n---\n' + words0);
+    const edited = await exec(`[2, 3].map(${LINES})`);
+    check('...and changing the words there changes the pages as you go', edited[0][0] === 'Brand new opening line.' && edited[0].length === 1 && /^Paragraph 1\./.test(edited[1][0]), JSON.stringify(edited));
+    await click('.pt-foot [data-a="cancel"]');
+    check('...and Cancel puts the words back', (await exec(`App.S.doc.pages[2].items[0].text`)) === words0);
+    await exec(`PlaceText.format(App.S.doc.pages[2].items[0])`);
+    await waitFor(() => exec(`!!document.querySelector('.pt-panel')`), 2000);
+    await wait(200);
     await setLk('size', 16);
     check('bigger text in Format story keeps the pages as they are', (await state()).pages === placedPages && /more text than fits/.test(await info()), await info());
     if (shots) await shot(path.join(shots, 'format-story.png'));
@@ -208,6 +218,31 @@ if (require.main === module) {
     check('in a box that does not continue, --- stays as text', JSON.stringify(lone) === '["a","---","b"]', JSON.stringify(lone));
     const lastBreak = await exec(`Layout.measure(App.S.doc, 'a\\n---\\nb\\n---\\nc', App.S.doc.styles[0], 100, 100, 2)`);
     check('a break with no box left over marks the text as not fitting', lastBreak.overflow === true && lastBreak.used === 2, JSON.stringify(lastBreak));
+
+    // The right-hand panel: drag its edge to resize it, remembered; double-click puts it back.
+    const drag = (dx) => exec(`(() => {
+      const h = document.querySelector('#right .right-resize'); const r = h.getBoundingClientRect(); const x = r.left + 3, y = r.top + 200;
+      const ev = (t, cx) => h.dispatchEvent(new PointerEvent(t, { clientX: cx, clientY: y, pointerId: 1, bubbles: true }));
+      ev('pointerdown', x); ev('pointermove', x + ${dx}); ev('pointerup', x + ${dx});
+      return Math.round(document.querySelector('#right').getBoundingClientRect().width);
+    })()`);
+    const w0 = await exec(`Math.round(document.querySelector('#right').getBoundingClientRect().width)`);
+    const wider = await drag(-180);
+    await wait(300);
+    check('dragging the right panel edge makes it wider', Math.abs(wider - (w0 + 180)) <= 2, JSON.stringify({ w0, wider }));
+    check('...and it is remembered', (await exec(`App.S.settings.rightWidth`)) === wider);
+    await open();
+    check('...with Place text filling the wider panel', Math.abs((await exec(`Math.round(document.querySelector('.pt-panel').getBoundingClientRect().width)`)) - wider) <= 2);
+    if (shots) {
+      await type(chat);
+      await shot(path.join(shots, 'place-text-wide.png'));
+    }
+    await click('.pt-foot [data-a="cancel"]');
+    const narrow = await drag(2000);
+    check('...it never gets too narrow', narrow >= 299 && narrow <= 301, String(narrow));
+    await exec(`document.querySelector('#right .right-resize').dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))`);
+    await wait(300);
+    check('double-clicking the edge puts it back', (await exec(`Math.round(document.querySelector('#right').getBoundingClientRect().width)`)) === 320);
     await exec('App.S.dirty = false');
   };
 }
