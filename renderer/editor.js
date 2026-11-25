@@ -894,7 +894,7 @@ const Story = (() => {
     m = openModal({
       title: 'Story',
       cls: 'story',
-      body: `<p class="muted">All the text in this box and the boxes it continues into. Type here and the pages update as you go. A line with just --- moves the rest on to the next box.</p>
+      body: `<p class="muted">All the text in this box and the boxes it continues into. Type here and the pages update as you go. A line with just --- moves the rest on to the next box${head.emptyLines === 'break' ? ', and so does an empty line' : ''}.</p>
         <textarea class="story-text" spellcheck="true"></textarea>
         <div class="modal-actions"><span class="muted story-info"></span><button class="btn btn-accent" data-a="done">Done</button></div>`,
       onClose: () => {

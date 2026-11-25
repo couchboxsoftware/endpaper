@@ -32,19 +32,7 @@ const PlaceText = (() => {
     let lines = String(text || '').replace(/\r\n?/g, '\n').replace(/\t/g, ' ').split('\n').map((l) => l.replace(/[  ]+$/, ''));
     // Empty lines before the text are never a break.
     while (lines.length && !lines[0].trim()) lines.shift();
-    if (emptyLines === 'break') {
-      const out = [];
-      for (let i = 0; i < lines.length; ) {
-        if (lines[i].trim() && !Layout.isBreak(lines[i])) {
-          out.push(lines[i++]);
-          continue;
-        }
-        let breaks = 0;
-        for (; i < lines.length && (!lines[i].trim() || Layout.isBreak(lines[i])); i++) if (Layout.isBreak(lines[i])) breaks++;
-        for (let k = 0; k < Math.max(1, breaks); k++) out.push('---');
-      }
-      lines = out;
-    }
+    if (emptyLines === 'break') lines = Layout.emptyLinesBreak(lines);
     while (lines.length && (!lines[lines.length - 1].trim() || Layout.isBreak(lines[lines.length - 1]))) lines.pop();
     return lines.join('\n');
   }
@@ -73,7 +61,7 @@ const PlaceText = (() => {
   /* ---------- making the boxes ---------- */
   // Adds pages after toIdx (add of them) and a linked box on count pages from fromIdx.
   // Returns the new boxes' ids and the new pages' ids.
-  function makeBoxes(doc, { text, look, styleId, fromIdx, toIdx, count, add }) {
+  function makeBoxes(doc, { text, look, styleId, fromIdx, toIdx, count, add, emptyLines }) {
     const master = doc.pages[toIdx].master;
     const pages = [];
     for (let k = 0; k < add; k++) {
@@ -88,7 +76,10 @@ const PlaceText = (() => {
       const it = Model.newItem('text', f.x, f.y, f.w, f.h, doc);
       it.style = clone(look);
       it.styleId = styleId || null;
-      if (i === 0) it.text = text;
+      if (i === 0) {
+        it.text = text;
+        if (emptyLines === 'break') it.emptyLines = 'break';
+      }
       doc.pages[idx].items.push(it);
       boxes.push(it);
     }
@@ -160,20 +151,36 @@ const PlaceText = (() => {
     });
   }
 
-  // Type, Format story…: the look of text that's already placed, on all its linked boxes.
+  // A story's Empty lines rule. Stories placed before it was kept (0.1.14 to 0.1.16) had their
+  // empty lines turned into ---, so one with --- and no empty lines was placed that way.
+  function storyRule(head) {
+    if (head.emptyLines) return head.emptyLines === 'break' ? 'break' : 'gap';
+    const lines = String(head.text || '').trim().split(/\r?\n/);
+    return lines.some((l) => Layout.isBreak(l)) && !lines.some((l) => !l.trim()) ? 'break' : 'gap';
+  }
+
+  // Type, Format story…: the text and look of text that's already placed, on all its linked boxes.
   function format(it) {
     const doc = App.S.doc;
     if (!canFormat(it)) return;
     const head = Model.chainOf(doc, it.id)[0].it;
-    start('format', { headId: head.id, styleId: head.styleId || null, look: clone(Model.styleOf(doc, head)) });
+    start('format', { headId: head.id, styleId: head.styleId || null, look: clone(Model.styleOf(doc, head)), emptyLines: storyRule(head) });
   }
+  // Sets a story's Empty lines rule on its first box.
+  function setRule(head, rule) {
+    if (rule === 'break') head.emptyLines = 'break';
+    else head.emptyLines = undefined;
+  }
+
+  const emptySeg = () => `<div class="pt-empty"><span class="muted">Empty lines</span><div class="seg" data-pt-seg="empty">${[['gap', 'Leave a gap'], ['break', 'Start a new page']].map(([v, l]) => `<button data-v="${v}" class="${v === P.emptyLines ? 'on' : ''}">${l}</button>`).join('')}</div></div>`;
 
   function shell() {
     const doc = App.S.doc;
     if (P.mode === 'format') {
       return `<div class="pt-head"><h3>Format story</h3><button class="icon-btn" data-a="cancel" title="Cancel">✕</button></div>
-        <div class="pt-scroll"><p class="hint">This text and how it looks, on all its linked boxes. The pages change as you go. A line with just --- starts a new page. Nothing is kept until you press Done.</p>
+        <div class="pt-scroll"><p class="hint">This text and how it looks, on all its linked boxes. The pages change as you go. A line with just --- starts a new page, and empty lines can too. Nothing is kept until you press Done.</p>
         <textarea class="pt-text" spellcheck="true"></textarea>
+        ${emptySeg()}
         <section><h5>Look</h5><div class="pt-look"></div></section></div>
         <div class="pt-foot"><p class="pt-info"></p><div class="pt-fit"></div><div class="btn-row pt-end"><button class="btn btn-ghost" data-a="cancel">Cancel</button><button class="btn btn-accent" data-a="done">Done</button></div></div>`;
     }
@@ -186,7 +193,7 @@ const PlaceText = (() => {
         <section><h5>Pages</h5>
           <div class="pt-range"><span>From page</span>${num('from', Model.pageNumber(doc, P.fromIdx))}<span>to</span>${num('to', Model.pageNumber(doc, P.toIdx))}</div>
           <label class="switch"><input type="checkbox" data-pt="add" ${P.addPages ? 'checked' : ''}><span>Add pages if it needs more</span></label>
-          <div class="pt-empty"><span class="muted">Empty lines</span><div class="seg" data-pt-seg="empty">${[['gap', 'Leave a gap'], ['break', 'Start a new page']].map(([v, l]) => `<button data-v="${v}" class="${v === P.emptyLines ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+          ${emptySeg()}
         </section>
         <section><h5>Look</h5><div class="pt-look"></div></section>
       </div>
@@ -224,8 +231,9 @@ const PlaceText = (() => {
     for (let i = doc.pages.length - 1; i >= 0; i--) if (extra.has(doc.pages[i].id)) doc.pages.splice(i, 1);
     P.boxIds = [];
     P.addedPages = [];
-    const text = clean(P.raw, { emptyLines: P.emptyLines });
-    P.need = pagesNeeded(doc, text, P.look, P.fromIdx);
+    // The story keeps your empty lines as you typed them, and its Empty lines rule with them.
+    const text = clean(P.raw);
+    P.need = pagesNeeded(doc, clean(P.raw, { emptyLines: P.emptyLines }), P.look, P.fromIdx);
     P.placed = 0;
     if (!P.need.pages) return;
     const room = P.toIdx - P.fromIdx + 1;
@@ -235,7 +243,7 @@ const PlaceText = (() => {
       add = P.need.pages - room;
       count = P.need.pages;
     }
-    const made = makeBoxes(doc, { text, look: P.look, styleId: P.styleId, fromIdx: P.fromIdx, toIdx: P.toIdx, count, add });
+    const made = makeBoxes(doc, { text, look: P.look, styleId: P.styleId, fromIdx: P.fromIdx, toIdx: P.toIdx, count, add, emptyLines: P.emptyLines });
     P.boxIds = made.boxes;
     P.addedPages = made.pages;
     P.placed = count;
@@ -244,6 +252,7 @@ const PlaceText = (() => {
   // Format: the look goes to every box the text runs through.
   function restyle() {
     const doc = App.S.doc;
+    setRule(Model.findItem(doc, P.headId).item, P.emptyLines);
     for (const { it } of Model.chainOf(doc, P.headId)) {
       it.style = clone(P.look);
       it.styleId = P.styleId || null;
@@ -298,7 +307,7 @@ const PlaceText = (() => {
     if (over) {
       const onPages = last.s.kind === 'page';
       const firstIdx = chain[0].s.kind === 'page' ? chain[0].s.idx : 0;
-      const more = onPages ? Math.max(1, pagesNeeded(doc, chain[0].it.text, P.look, firstIdx).pages - chain.length) : 0;
+      const more = onPages ? Math.max(1, pagesNeeded(doc, clean(chain[0].it.text, { emptyLines: P.emptyLines }), P.look, firstIdx).pages - chain.length) : 0;
       out.textContent = `There's more text than fits in its ${pl(chain.length, 'box', 'boxes')}.`;
       out.classList.add('warn');
       if (onPages) {
@@ -348,7 +357,9 @@ const PlaceText = (() => {
       if (seg.dataset.v === P.emptyLines) return;
       P.emptyLines = seg.dataset.v;
       $$('[data-pt-seg="empty"] [data-v]', P.el).forEach((x) => x.classList.toggle('on', x === seg));
-      ep.settings.set({ placeEmptyLines: P.emptyLines }).then((s) => (App.S.settings = s));
+      // In Place text the choice is remembered for next time; in Format story it's the story's.
+      if (P.mode === 'format') setRule(Model.findItem(App.S.doc, P.headId).item, P.emptyLines);
+      else ep.settings.set({ placeEmptyLines: P.emptyLines }).then((s) => (App.S.settings = s));
       return live();
     }
     const al = e.target.closest('[data-lk-seg="align"] [data-v]');

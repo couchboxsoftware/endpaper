@@ -194,7 +194,34 @@ if (require.main === module) {
     check('Start a new page makes each part its own page', /Fills pages 1 to 3\./.test(await info()), await info());
     const chatPages = await exec(`[0, 1, 2].map(${LINES})`);
     check('...placed that way', JSON.stringify(chatPages) === JSON.stringify([['hello my name is sab'], ['hi nice to meet you.', 'my name is Joanna,'], ['lovely to meet you.']]), JSON.stringify(chatPages));
+    await click('.pt-foot [data-a="done"]');
+    const kept = await exec(`(() => { const h = App.S.doc.pages[0].items[0]; return { text: h.text, rule: h.emptyLines }; })()`);
+    check('the story keeps your empty lines as you typed them, and the rule with them', kept.text === chat && kept.rule === 'break', JSON.stringify(kept));
+    // Format story: the same rule, and the text with its empty lines.
+    await exec(`PlaceText.format(App.S.doc.pages[0].items[0])`);
+    await waitFor(() => exec(`!!document.querySelector('.pt-panel')`), 2000);
+    await wait(200);
+    check('Format story opens with the story’s own Empty lines rule', await exec(`${Q('[data-pt-seg="empty"] .on')}.dataset.v === 'break' && ${Q('.pt-text')}.value === ${JSON.stringify(chat)}`));
+    await type(chat + '\n\nsee you soon');
+    check('...so an empty line typed there starts a new page, offering to add it', /Add 1 page$/.test(await exec(`${Q('[data-a="fit-add"]')}?.textContent || ''`)), await info());
+    await click('[data-a="fit-add"]');
+    check('...which holds the new part', JSON.stringify(await exec(`[3].map(${LINES})`)) === '[["see you soon"]]' && /fits its 4 boxes/.test(await info()), JSON.stringify({ p4: await exec(`[3].map(${LINES})`), info: await info() }));
+    await click('[data-pt-seg="empty"] [data-v="gap"]');
+    check('...and switching to Leave a gap puts it all back on one page', (await exec(`[0].map(${LINES})`))[0].length === 8 && (await exec(`App.S.doc.pages[0].items[0].emptyLines`)) == null, JSON.stringify(await exec(`[0].map(${LINES})`)));
+    await click('[data-pt-seg="empty"] [data-v="break"]');
     await click('.pt-foot [data-a="cancel"]');
+    check('...and Cancel keeps the story as it was', (await exec(`App.S.doc.pages[0].items[0].text`)) === chat && (await exec(`App.S.doc.pages[0].items[0].emptyLines`)) === 'break');
+    // A story placed before the rule was kept: --- and no empty lines means Start a new page.
+    await exec(`(() => { const h = App.S.doc.pages[0].items[0]; h.text = 'one\\n---\\ntwo\\n---\\nthree'; delete h.emptyLines; Layout.invalidate(); })()`);
+    await exec(`PlaceText.format(App.S.doc.pages[0].items[0])`);
+    await waitFor(() => exec(`!!document.querySelector('.pt-panel')`), 2000);
+    await wait(200);
+    check('a story placed in an earlier version keeps its rule too', await exec(`${Q('[data-pt-seg="empty"] .on')}.dataset.v === 'break'`));
+    await type('one\n\ntwo\n---\nthree');
+    check('...so empty lines start new pages there as well', JSON.stringify(await exec(`[0, 1, 2].map(${LINES})`)) === '[["one"],["two"],["three"]]', JSON.stringify(await exec(`[0, 1, 2].map(${LINES})`)));
+    await click('.pt-foot [data-a="cancel"]');
+    await exec(`App.history.doUndo()`);
+    await wait(200);
     await open();
     check('...and the choice is remembered next time', await exec(`${Q('[data-pt-seg="empty"] .on')}.dataset.v === 'break'`));
     await click('.pt-foot [data-a="cancel"]');

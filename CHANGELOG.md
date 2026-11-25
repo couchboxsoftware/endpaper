@@ -19,6 +19,16 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.17 · 25 Nov 2026
+Your story keeps its empty lines, and whether they start a new page.
+
+### New
+- Format story has the Empty lines choice too, set to the one you placed the story with. Switch between Leave a gap and Start a new page at any time.
+
+### Fixed
+- Empty lines typed in Format story start a new page when the story is set to Start a new page.
+- Place text keeps your empty lines as you typed them, instead of turning them into ---. Stories placed before this keep their --- lines, and Format story sets them to Start a new page.
+
 ## 0.1.16 · 24 Nov 2026
 Change your story's words and look in one place, and make the right panel as wide as you like.
 

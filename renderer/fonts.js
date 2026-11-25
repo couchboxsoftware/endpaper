@@ -101,7 +101,8 @@ const Fonts = (() => {
 
 /* Text layout: paragraphs, wrapping, alignment (justified included), first-line indents, space
    after paragraphs, and text that continues from one box into the next. In text that continues,
-   a line with just --- (a break) moves the rest on to the next box. */
+   a line with just --- (a break) moves the rest on to the next box, and so do empty lines when
+   the text's first box says so (emptyLines: 'break', set by Place text and Format story). */
 const Layout = (() => {
   let cache = new Map();
   const invalidate = () => (cache = new Map());
@@ -115,6 +116,24 @@ const Layout = (() => {
 
   const BREAK = /^\s*-{3,}\s*$/;
   const isBreak = (line) => BREAK.test(line);
+  // For text whose empty lines start a new page (its first box has emptyLines: 'break'): each run
+  // of empty lines becomes a break. Empty lines next to a --- add nothing to it (two --- in a row
+  // still leave a page empty), and empty lines before the text are never a break.
+  function emptyLinesBreak(lines) {
+    const out = [];
+    let i = 0;
+    while (i < lines.length && !lines[i].trim()) i++;
+    while (i < lines.length) {
+      if (lines[i].trim() && !isBreak(lines[i])) {
+        out.push(lines[i++]);
+        continue;
+      }
+      let breaks = 0;
+      for (; i < lines.length && (!lines[i].trim() || isBreak(lines[i])); i++) if (isBreak(lines[i])) breaks++;
+      for (let k = 0; k < Math.max(1, breaks); k++) out.push('---');
+    }
+    return out;
+  }
 
   // Lays out a whole chain and returns the result for one box: { lines, overflow, font, size, ... }.
   function box(doc, it, ctx) {
@@ -151,6 +170,7 @@ const Layout = (() => {
     // Breaks only count when the text continues into another box. Blank lines either side of a
     // break are dropped, so a new box never starts (or a full one spills) with empty lines.
     const chained = boxes.length > 1;
+    if (chained && head.emptyLines === 'break') paras = emptyLinesBreak(paras);
     if (chained && paras.some(isBreak)) {
       const drop = new Set();
       paras.forEach((p, i) => {
@@ -284,5 +304,5 @@ const Layout = (() => {
     return { used: Math.min(n, out.end + 1), overflow: [...out.values()].some((r) => r.overflow) };
   }
 
-  return { box, invalidate, tokens, measure, isBreak };
+  return { box, invalidate, tokens, measure, isBreak, emptyLinesBreak };
 })();
