@@ -19,6 +19,21 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.20 · 25 Nov 2026
+Group things to move and scale them together, and photos resize the way you'd expect.
+
+### New
+- Group things (Ctrl+G, or Object, Group) to keep them together, and Ungroup with Ctrl+Shift+G. One click picks up the whole group; double-click to work on one thing in it, and Esc to come back out.
+- A group's corners scale everything in it together, text sizes and line widths too, and the handle on top turns it all.
+- Layers shows each group as a folder: open or close it, hide or lock all of it, double-click to rename it, and drag things into or out of it.
+- Select several things and their corners scale them together, without grouping.
+
+### Improved
+- A photo's corner scales the frame and photo together, so the same part stays in view. Hold Shift to change the frame's shape instead.
+- A photo's side crops it: the photo stays where it is, and only grows if the frame would otherwise show an empty gap.
+- Fill frame and Fit in frame are buttons in a photo's Properties that fit it once, so resizing always works the same way afterwards.
+- Duplicating, pasting or Alt-dragging a group makes a new group of its own.
+
 ## 0.1.19 · 25 Nov 2026
 Remove a photo's background in one click, then touch it up.
 
