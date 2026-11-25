@@ -207,6 +207,31 @@ const Panels = (() => {
   /* ---------- Layers (in the right panel, next to Properties) ---------- */
   function onLayerClick(e) {
     const { doc } = S();
+    // A group's folder row: open or close it, hide or lock all of it, or pick the whole group.
+    const grow = e.target.closest('[data-group-row]');
+    if (grow) {
+      const gid = grow.dataset.groupRow;
+      const members = Model.groupMembers(Model.surfaceItems(doc, S().surface), gid);
+      if (e.target.closest('[data-fold]')) {
+        closedGroups.has(gid) ? closedGroups.delete(gid) : closedGroups.add(gid);
+        return renderLayers();
+      }
+      const gt = e.target.closest('[data-gtog]');
+      if (gt) {
+        const k = gt.dataset.gtog;
+        const to = !members.every((m) => m[k]);
+        return App.change(k === 'hidden' ? (to ? 'Hide group' : 'Show group') : to ? 'Lock group' : 'Unlock group', () => members.forEach((m) => (m[k] = to)));
+      }
+      S().inGroup = null;
+      const ids = members.map((m) => m.id);
+      if (e.shiftKey || e.ctrlKey) {
+        const sel = S().sel;
+        const on = !ids.every((id) => sel.has(id));
+        ids.forEach((id) => (on ? sel.add(id) : sel.delete(id)));
+        return App.selectionChanged();
+      }
+      return App.select(ids);
+    }
     const row = e.target.closest('[data-layer]');
     if (row) {
       const id = row.dataset.layer;
@@ -216,15 +241,26 @@ const Panels = (() => {
         if (!it) return;
         return App.change(tog.dataset.tog === 'hidden' ? (it.hidden ? 'Show' : 'Hide') : it.locked ? 'Unlock' : 'Lock', () => (it[tog.dataset.tog] = !it[tog.dataset.tog]));
       }
+      // A box inside a group, picked in Layers: you're in the group, working on just that box.
+      const it = Model.findItem(doc, id, S().surface)?.item;
       if (e.shiftKey || e.ctrlKey) {
         const sel = S().sel;
         sel.has(id) ? sel.delete(id) : sel.add(id);
         App.selectionChanged();
-      } else App.select([id]);
+      } else {
+        S().inGroup = it && it.group ? it.group : null;
+        App.select([id]);
+      }
     }
   }
   function onLayerDbl(e) {
     const { doc } = S();
+    const grow = e.target.closest('[data-group-row]');
+    if (grow && !e.target.closest('[data-fold], [data-gtog]')) {
+      const g = doc.groups[grow.dataset.groupRow];
+      if (g) prompt('Group name', g.name).then((v) => v && v.trim() && App.change('Rename group', () => (g.name = v.trim())));
+      return;
+    }
     const row = e.target.closest('[data-layer]');
     if (row) {
       const it = Model.findItem(doc, row.dataset.layer)?.item;
@@ -232,6 +268,22 @@ const Panels = (() => {
     }
   }
   function onLayerContext(e) {
+    const grow = e.target.closest('[data-group-row]');
+    if (grow) {
+      e.preventDefault();
+      const { doc } = S();
+      const gid = grow.dataset.groupRow;
+      const ids = Model.groupMembers(Model.surfaceItems(doc, S().surface), gid).map((m) => m.id);
+      if (!ids.every((id) => S().sel.has(id))) (S().inGroup = null), App.select(ids);
+      const g = doc.groups[gid];
+      return contextMenu(e.clientX, e.clientY, [
+        { label: 'Rename group…', run: () => g && prompt('Group name', g.name).then((v) => v && v.trim() && App.change('Rename group', () => (g.name = v.trim()))) },
+        { label: 'Ungroup', key: 'Ctrl+Shift+G', run: () => App.cmd('ungroup') },
+        '-',
+        { label: 'Duplicate', key: 'Ctrl+D', run: () => App.cmd('duplicate') },
+        { label: 'Delete', key: 'Del', run: () => App.cmd('delete') },
+      ]);
+    }
     const row = e.target.closest('[data-layer]');
     if (row) {
       e.preventDefault();
@@ -287,16 +339,36 @@ const Panels = (() => {
   }
 
   const ICON = { text: 'T', image: '▣', rect: '■', ellipse: '●', line: '╱' };
+  // Groups whose folder is closed in Layers (open is the usual; this lasts while Endpaper is open).
+  const closedGroups = new Set();
+  const openGroup = (gid) => gid && closedGroups.delete(gid);
   function renderLayers() {
     const { doc, surface, sel } = S();
     const items = Model.surfaceItems(doc, surface).filter((it) => Model.onSurface(doc, surface, it));
     let html = `<div class="pp-head"><h4>Layers</h4><span class="muted">Top first. Drag to reorder.</span></div><div class="layers">`;
-    for (let i = items.length - 1; i >= 0; i--) {
-      const it = items[i];
-      html += `<div class="layer${sel.has(it.id) ? ' on' : ''}${it.hidden ? ' is-hidden' : ''}" draggable="true" data-layer="${it.id}">
+    const row = (it, inGroup) => `<div class="layer${sel.has(it.id) ? ' on' : ''}${it.hidden ? ' is-hidden' : ''}${inGroup ? ' in-group' : ''}" draggable="true" data-layer="${it.id}">
         <button class="tog" data-tog="hidden" title="${it.hidden ? 'Show' : 'Hide'}">${it.hidden ? '◌' : '◉'}</button>
         <button class="tog" data-tog="locked" title="${it.locked ? 'Unlock' : 'Lock'}">${it.locked ? '🔒' : '·'}</button>
         <span class="lic">${ICON[it.type]}</span><span class="lname">${esc(Model.itemLabel(it))}</span></div>`;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      if (!it.group) {
+        html += row(it, false);
+        continue;
+      }
+      // A group: its folder row, then (open) its boxes, top first. They always sit together.
+      const gid = it.group;
+      const members = [];
+      while (i >= 0 && items[i].group === gid) members.push(items[i--]);
+      i++;
+      const open = !closedGroups.has(gid);
+      const allHidden = members.every((m) => m.hidden), allLocked = members.every((m) => m.locked);
+      const on = members.every((m) => sel.has(m.id));
+      html += `<div class="layer layer-group${on ? ' on' : ''}${allHidden ? ' is-hidden' : ''}" draggable="true" data-group-row="${gid}">
+        <button class="tog" data-gtog="hidden" title="${allHidden ? 'Show the group' : 'Hide the group'}">${allHidden ? '◌' : '◉'}</button>
+        <button class="tog" data-gtog="locked" title="${allLocked ? 'Unlock the group' : 'Lock the group'}">${allLocked ? '🔒' : '·'}</button>
+        <button class="lfold" data-fold title="${open ? 'Close' : 'Open'}">${open ? '▾' : '▸'}</button><span class="lic">📁</span><span class="lname">${esc((doc.groups[gid] && doc.groups[gid].name) || 'Group')}</span><em class="muted">${members.length}</em></div>`;
+      if (open) for (const m of members) html += row(m, true);
     }
     if (!items.length) html += '<p class="hint">Nothing on this page yet. Pick a tool at the top and drag on the page.</p>';
     if (surface.kind === 'page') {
@@ -316,16 +388,18 @@ const Panels = (() => {
 
   function layersDnD() {
     const host = $('#right-body');
-    let dragId = null;
+    // What's being dragged: a box ({ id }) or a whole group ({ gid }).
+    let dragging = null;
+    const rowOf = (e) => e.target.closest('[data-layer], [data-group-row]');
     host.addEventListener('dragstart', (e) => {
-      const r = e.target.closest('[data-layer]');
+      const r = rowOf(e);
       if (!r) return;
-      dragId = r.dataset.layer;
+      dragging = r.dataset.groupRow ? { gid: r.dataset.groupRow } : { id: r.dataset.layer };
       e.dataTransfer.effectAllowed = 'move';
     });
     host.addEventListener('dragover', (e) => {
-      if (!dragId) return;
-      const r = e.target.closest('[data-layer]');
+      if (!dragging) return;
+      const r = rowOf(e);
       if (!r) return;
       e.preventDefault();
       $$('.layer.drop-above, .layer.drop-below', host).forEach((x) => x.classList.remove('drop-above', 'drop-below'));
@@ -333,22 +407,46 @@ const Panels = (() => {
       r.classList.add(above ? 'drop-above' : 'drop-below');
     });
     host.addEventListener('drop', (e) => {
-      const r = e.target.closest('[data-layer]');
-      if (!dragId || !r || r.dataset.layer === dragId) return (dragId = null);
+      const r = rowOf(e);
+      const d = dragging;
+      dragging = null;
+      if (!d || !r) return;
       e.preventDefault();
       const above = r.classList.contains('drop-above');
-      const target = r.dataset.layer;
-      const id = dragId;
-      dragId = null;
+      const tGroup = r.dataset.groupRow || null; // dropped on a group's folder row
+      const tId = r.dataset.layer || null;
+      if ((d.id && d.id === tId) || (d.gid && d.gid === tGroup)) return;
       App.change('Reorder', () => {
         const list = Model.surfaceItems(S().doc, S().surface);
-        const it = list.splice(list.findIndex((x) => x.id === id), 1)[0];
-        let ti = list.findIndex((x) => x.id === target);
-        // The list is shown top first, so "above" means later in the array.
-        list.splice(above ? ti + 1 : ti, 0, it);
+        const moving = d.gid ? list.filter((x) => x.group === d.gid) : list.filter((x) => x.id === d.id);
+        if (!moving.length) return;
+        const rest = list.filter((x) => !moving.includes(x));
+        // Where it lands. The list is shown top first, so "above" means later in the array.
+        let at;
+        let join = null; // a box dropped among a group's boxes joins that group
+        if (tGroup) {
+          const members = rest.filter((x) => x.group === tGroup);
+          if (!members.length) return;
+          at = above ? rest.indexOf(members[members.length - 1]) + 1 : rest.indexOf(members[0]);
+          // Just under an open group's folder row is inside it, at the top.
+          if (!above && d.id && !closedGroups.has(tGroup)) (at = rest.indexOf(members[members.length - 1]) + 1), (join = tGroup);
+        } else {
+          const t = rest.find((x) => x.id === tId);
+          if (!t) return;
+          at = rest.indexOf(t) + (above ? 1 : 0);
+          if (t.group && t.group !== d.gid && d.id) join = t.group;
+        }
+        rest.splice(at, 0, ...moving);
+        if (d.id) {
+          const it = moving[0];
+          if (join) it.group = join;
+          else delete it.group;
+        }
+        list.splice(0, list.length, ...rest);
+        Model.tidyGroups(list);
       });
     });
-    host.addEventListener('dragend', () => (dragId = null));
+    host.addEventListener('dragend', () => (dragging = null));
   }
 
   /* ================= RIGHT ================= */
@@ -426,7 +524,7 @@ const Panels = (() => {
       h += `<section><h5>Photo</h5>
         ${a ? `<p class="file-line">${esc(a.name)} · ${a.w} × ${a.h} px ${ppiTag(it)}</p>` : '<p class="hint">No photo yet.</p>'}
         <div class="btn-row"><button class="btn btn-sm" data-act="replace-photo">${a ? 'Replace…' : 'Choose photo…'}</button>${a ? `<button class="btn btn-sm" data-act="crop">Adjust</button>` : ''}</div>
-        ${a ? `<div class="field field-wide"><span>Fit</span>${seg('fit', it.fit, [['fill', 'Fill', 'Fill the frame (edges may be cropped)'], ['fit', 'Fit', 'Fit inside the frame (all of the photo shows)'], ['custom', 'Custom', 'Your own crop']])}</div>
+        ${a ? `<div class="field field-wide"><span>Fit</span><div class="btn-row fit-btns"><button class="btn btn-sm" data-act="fit-fill" title="Make the photo fill the frame, centred (its edges may be cropped)">Fill frame</button><button class="btn btn-sm" data-act="fit-fit" title="Fit all of the photo inside the frame, centred">Fit in frame</button></div></div>
         <div class="field field-wide"><span>Zoom</span><input type="range" min="20" max="400" value="${Math.round((it.s / ((d) => Math.max(it.w / d.w, it.h / d.h))(PhotoEdit.dims(it, a))) * 100)}" data-range="zoom"></div>` : ''}
         ${colorBtn('Border', 'stroke', it.stroke)}${it.stroke ? `<div class="grid2">${len('Border', 'strokeW', it.strokeW)}</div>` : ''}
       </section>`;
@@ -471,7 +569,14 @@ const Panels = (() => {
   }
 
   function multiProps(items) {
-    return `<section><h5>${items.length} selected</h5>
+    const gid = App.selectedGroup();
+    const g = gid && S().doc.groups[gid];
+    const head = g
+      ? `<section><h5>Group · ${esc(g.name)} <span class="muted">· ${items.length}</span></h5>
+        <p class="hint">Drag a corner to scale everything in it, text included. Double-click a box to work on it on its own.</p>
+        <div class="btn-row"><button class="btn btn-sm" data-act="rename-group">Rename…</button><button class="btn btn-sm" data-act="ungroup" title="Ctrl+Shift+G">Ungroup</button></div></section>`
+      : `<section><div class="btn-row"><button class="btn btn-sm" data-act="group" title="Keep these together (Ctrl+G)">Group</button>${items.some((x) => x.group) ? '<button class="btn btn-sm" data-act="ungroup" title="Ctrl+Shift+G">Ungroup</button>' : ''}</div></section>`;
+    return `${head}<section><h5>${items.length} selected</h5>
       <div class="field field-wide"><span>Align</span><div class="seg">
         <button data-align="left" title="Left edges">⇤</button><button data-align="hcenter" title="Centres">↔</button><button data-align="right" title="Right edges">⇥</button>
         <button data-align="top" title="Tops">⤒</button><button data-align="vcenter" title="Middles">↕</button><button data-align="bottom" title="Bottoms">⤓</button></div></div>
@@ -684,12 +789,21 @@ const Panels = (() => {
       if (a === 'style-from') return newStyleFrom(it);
       if (a === 'replace-photo') return App.pickPhotoFor(it);
       if (a === 'crop') return App.startCrop(it);
+      // Fill frame and Fit in frame happen once; resizing afterwards always crops or scales.
+      if (a === 'fit-fill' || a === 'fit-fit')
+        return App.change(a === 'fit-fill' ? 'Fill frame' : 'Fit in frame', () => {
+          for (const x of items) if (x.type === 'image' && x.asset) Render.fitImage(x, doc.assets[x.asset], a === 'fit-fill' ? 'fill' : 'fit');
+        });
       if (a === 'edit-photo') return PhotoEdit.open(it);
       if (a === 'copy-effects') return PhotoEdit.copyEffects(it);
       if (a === 'paste-effects') return PhotoEdit.pasteEffects(Editor.selectedItems());
       if (a === 'swap') return App.change('Swap size', () => ([doc.w, doc.h] = [doc.h, doc.w]), { thumbs: 'all' });
       if (a === 'page-numbers') return App.change('Page numbers', () => Model.addPageNumbers(doc), { thumbs: 'all' });
-      if (['lock', 'duplicate', 'delete'].includes(a)) return App.cmd(a);
+      if (['lock', 'duplicate', 'delete', 'group', 'ungroup'].includes(a)) return App.cmd(a);
+      if (a === 'rename-group') {
+        const g = doc.groups[App.selectedGroup()];
+        return g && prompt('Group name', g.name).then((v) => v && v.trim() && App.change('Rename group', () => (g.name = v.trim())));
+      }
       if (a === 'new-swatch') return SwatchEditor.open(null);
       if (a === 'new-style') return StyleEditor.open(null);
       if (a === 'kit-add-colours') return App.kit.addSwatches(doc.swatches);
@@ -892,7 +1006,7 @@ const Panels = (() => {
     b.hidden = !n;
   }, 600);
 
-  return { init, render, renderLeft, renderRight, renderProps, refreshGeometry, refreshLayers, refreshThumbsSoon, invalidateThumbs, startLink, finishLink, updateCheckBadge };
+  return { init, render, renderLeft, renderRight, renderProps, refreshGeometry, refreshLayers, refreshThumbsSoon, invalidateThumbs, startLink, finishLink, updateCheckBadge, openGroup };
 })();
 
 /* ---------- colour picker: swatches, CMYK values, or a screen colour converted to CMYK ---------- */

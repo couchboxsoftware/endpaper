@@ -127,6 +127,7 @@ const Model = (() => {
       ],
       assets: {},
       textures: {}, // your own textures used by photo effects: id -> { name, mime, data, w, h, tiles }
+      groups: {}, // names of groups of boxes: id -> { name } (the boxes say which group they're in)
       cover: { enabled: book, spineExtra: 0, bleed: 3, items: [], inside: { enabled: false, items: [] }, layout: 'spread', order: 'outside-first' },
       print: { ...printDefault(), ...(print || {}) },
       created: Date.now(),
@@ -202,7 +203,7 @@ const Model = (() => {
      stays linked: anything you haven't changed on the page (say its position) follows the
      master, and what you have changed (say its text) is the page's own. base holds the master's
      values the copy last saw, so a value still equal to base hasn't been changed on the page. */
-  const NOT_LINKED = new Set(['id', 'masterRef', 'base', 'next']);
+  const NOT_LINKED = new Set(['id', 'masterRef', 'base', 'next', 'group']);
   const linkedValues = (mi) => {
     const out = {};
     for (const k of Object.keys(mi)) if (!NOT_LINKED.has(k)) out[k] = clone(mi[k]);
@@ -439,6 +440,46 @@ const Model = (() => {
     return [...out];
   }
 
+  /* ---------- groups ----------
+     A group is the boxes on one page (or master, or cover) that share it.group. Their names are
+     in doc.groups (id -> { name }). A group's boxes always sit together in the page's layer
+     order; no groups inside groups. */
+  const groupMembers = (list, gid) => (gid ? list.filter((it) => it.group === gid) : []);
+  // Puts each group's boxes together, where its topmost box is, keeping their own order.
+  function tidyGroups(list) {
+    const seen = new Set();
+    for (let i = list.length - 1; i >= 0; i--) {
+      const gid = list[i] && list[i].group;
+      if (!gid || seen.has(gid)) continue;
+      seen.add(gid);
+      const members = list.filter((it) => it.group === gid);
+      if (members.length < 2) {
+        for (const m of members) delete m.group; // a group of one is no group
+        continue;
+      }
+      const top = list.indexOf(members[members.length - 1]);
+      const rest = list.filter((it, j) => it.group !== gid || j === top);
+      const at = rest.indexOf(list[top]);
+      rest.splice(at, 1, ...members);
+      list.length = 0;
+      list.push(...rest);
+      i = list.indexOf(members[0]);
+    }
+  }
+  // A name no other group in the design has: Group 1, Group 2…
+  function newGroupName(doc) {
+    const names = new Set(Object.values(doc.groups || {}).map((g) => g.name));
+    let n = 1;
+    while (names.has(`Group ${n}`)) n++;
+    return `Group ${n}`;
+  }
+  function pruneGroups(doc) {
+    if (!doc.groups) return;
+    const used = new Set();
+    for (const s of allSurfaces(doc)) for (const it of surfaceItems(doc, s)) if (it.group) used.add(it.group);
+    for (const k of Object.keys(doc.groups)) if (!used.has(k)) delete doc.groups[k];
+  }
+
   /* ---------- assets ---------- */
   function usedAssets(doc) {
     const used = new Set();
@@ -454,6 +495,7 @@ const Model = (() => {
     const used = usedAssets(doc);
     for (const k of Object.keys(doc.assets)) if (!used.has(k)) delete doc.assets[k];
     pruneTextures(doc);
+    pruneGroups(doc);
   }
   // Your own textures that photo effects use (the drawn ones need nothing saved).
   function usedTextures(doc, items) {
@@ -482,6 +524,7 @@ const Model = (() => {
     doc.swatches = doc.swatches || SWATCHES();
     doc.assets = doc.assets || {};
     doc.textures = doc.textures || {};
+    doc.groups = doc.groups || {};
     doc.dpi = doc.dpi || 300;
     doc.pageStart = doc.pageStart || 1;
     // Files from before 0.1.4 linked boxes to their style. Give each box its own copy of exactly
@@ -504,6 +547,6 @@ const Model = (() => {
     PRESETS, FINISHES, SHADES, printDefault, sheetMm, estimatePerPage, perPage, bookSpecs, DEFAULT_FONT, textStyle, newDoc, newPage, newItem, itemLabel, typeName, addPageNumbers,
     spreads, side, pageNumber, margins, master, masterItems, masterSource, overrideMasterItem, syncOverrides, cover, coverPages, isInside, coverSurfaces, surfaceName, isSingle, isCoverPage, surfaceOrigin, coverSurfaceFor, onSurface,
     surfaceItems, surfaceSize, surfaceSide, sameSurface, allSurfaces, printedSurfaces, findItem,
-    resolveColor, colorName, ink, styleOf, applyStyle, chainOf, withLinked, usedAssets, pruneAssets, usedTextures, pruneTextures, normalise,
+    resolveColor, colorName, ink, styleOf, applyStyle, chainOf, withLinked, groupMembers, tidyGroups, newGroupName, pruneGroups, usedAssets, pruneAssets, usedTextures, pruneTextures, normalise,
   };
 })();

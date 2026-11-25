@@ -17,6 +17,7 @@ const App = (() => {
     crop: null,
     linkFrom: null,
     clip: null,
+    inGroup: null, // the group you've gone into (double-click) to work on one box in it
     version: '',
   };
   const unit = () => S.settings.units || 'mm';
@@ -131,7 +132,21 @@ const App = (() => {
   /* ================= selection and navigation ================= */
   function select(ids) {
     S.sel = new Set(ids);
+    // Picking anything outside the group you'd gone into comes back out of it.
+    if (S.inGroup && S.doc) {
+      const list = Model.surfaceItems(S.doc, S.surface);
+      if (!S.sel.size || [...S.sel].some((id) => list.find((x) => x.id === id)?.group !== S.inGroup)) S.inGroup = null;
+    }
     selectionChanged();
+  }
+  // Boxes as you'd pick them: a box in a group brings its whole group, unless you've gone into it.
+  function withGroups(ids) {
+    if (!S.doc) return [...ids];
+    const list = Model.surfaceItems(S.doc, S.surface);
+    const out = new Set(ids);
+    const groups = new Set(list.filter((it) => out.has(it.id) && it.group && it.group !== S.inGroup).map((it) => it.group));
+    for (const it of list) if (groups.has(it.group)) out.add(it.id);
+    return [...out];
   }
   function selectionChanged() {
     if (S.crop && !S.sel.has(S.crop)) S.crop = null;
@@ -267,6 +282,57 @@ const App = (() => {
   function selectedList() {
     return Model.surfaceItems(S.doc, S.surface).filter((it) => S.sel.has(it.id));
   }
+
+  /* ================= groups ================= */
+  // The one group the selection is (all of it, and nothing else), or null.
+  function selectedGroup() {
+    if (!S.doc) return null;
+    const sel = selectedList();
+    const gid = sel[0] && sel[0].group;
+    if (!gid || !sel.every((it) => it.group === gid)) return null;
+    return Model.groupMembers(Model.surfaceItems(S.doc, S.surface), gid).length === sel.length ? gid : null;
+  }
+  function group() {
+    const sel = selectedList();
+    if (sel.length < 2) return status('Select two or more things to group them.');
+    let gid;
+    change('Group', () => {
+      gid = uid('g');
+      S.doc.groups[gid] = { name: Model.newGroupName(S.doc) };
+      for (const it of sel) it.group = gid; // boxes already in a group join this one instead
+      Model.tidyGroups(Model.surfaceItems(S.doc, S.surface));
+      S.inGroup = null;
+    });
+    Panels.openGroup(gid);
+  }
+  function ungroup() {
+    const gids = new Set(selectedList().filter((it) => it.group).map((it) => it.group));
+    if (!gids.size) return;
+    change('Ungroup', () => {
+      for (const it of Model.surfaceItems(S.doc, S.surface)) if (gids.has(it.group)) delete it.group;
+      for (const g of gids) delete S.doc.groups[g];
+      S.inGroup = null;
+    });
+  }
+  // Copies of boxes for duplicate, paste and Alt-drag. A whole group copied makes a new group (its
+  // name gets "copy"); part of a group stays in that group, beside the originals.
+  function copiesOf(items, from, names) {
+    const whole = new Set();
+    for (const it of items) if (it.group && Model.groupMembers(from || [], it.group).every((m) => items.some((x) => x.id === m.id))) whole.add(it.group);
+    const map = {};
+    return items.map((it) => {
+      const c = { ...clone(it), id: uid('i'), next: null };
+      if (c.group && (!from || whole.has(c.group))) {
+        if (!map[c.group]) {
+          map[c.group] = uid('g');
+          const was = (names && names[c.group]) || S.doc.groups[c.group];
+          S.doc.groups[map[c.group]] = { name: was ? `${was.name} copy` : Model.newGroupName(S.doc) };
+        }
+        c.group = map[c.group];
+      }
+      return c;
+    });
+  }
   function cmd(name) {
     if (!S.doc) return;
     const list = Model.surfaceItems(S.doc, S.surface);
@@ -280,7 +346,9 @@ const App = (() => {
       const textures = {};
       for (const id of Model.usedTextures(S.doc, sel)) if (S.doc.textures[id]) textures[id] = S.doc.textures[id];
       // org: where the copied page starts, so a paste onto a cover page lands in the same place on it.
-      S.clip = { items: clone(sel), assets, textures, org: Model.surfaceOrigin(S.doc, S.surface) };
+      const groups = {};
+      for (const it of sel) if (it.group && S.doc.groups[it.group]) groups[it.group] = S.doc.groups[it.group];
+      S.clip = { items: clone(sel), assets, textures, groups, org: Model.surfaceOrigin(S.doc, S.surface) };
       if (name === 'copy') return status(`Copied ${sel.length} item${sel.length === 1 ? '' : 's'}`);
     }
     if (name === 'delete' || name === 'cut') {
@@ -292,14 +360,16 @@ const App = (() => {
             if (ids.has(l[i].id)) l.splice(i, 1);
             else if (l[i].next && ids.has(l[i].next)) l[i].next = null;
           }
+          Model.tidyGroups(l); // a group left with one box isn't a group
         }
         S.sel = new Set();
       });
     }
     if (name === 'duplicate') {
       return change('Duplicate', () => {
-        const copies = sel.map((it) => ({ ...clone(it), id: uid('i'), x: it.x + 5, y: it.y + 5, next: null }));
+        const copies = copiesOf(sel, list).map((c) => ({ ...c, x: c.x + 5, y: c.y + 5 }));
         list.push(...copies);
+        Model.tidyGroups(list);
         S.sel = new Set(copies.map((c) => c.id));
       });
     }
@@ -310,16 +380,33 @@ const App = (() => {
     if (['front', 'forward', 'backward', 'back'].includes(name)) {
       return change('Arrange', () => {
         const ids = new Set(sel.map((x) => x.id));
+        // Inside a group you've gone into, boxes move within the group; otherwise on the page,
+        // where a group moves as one (it's never split by another box).
+        const inside = S.inGroup && sel.every((x) => x.group === S.inGroup);
+        const arr = inside ? list.filter((x) => x.group === S.inGroup) : [...list];
+        const blocks = [];
+        for (const it of arr) {
+          const last = blocks[blocks.length - 1];
+          if (!inside && it.group && last && last[0].group === it.group) last.push(it);
+          else blocks.push([it]);
+        }
+        const isSel = (b) => b.some((x) => ids.has(x.id));
         if (name === 'front' || name === 'back') {
-          const rest = list.filter((x) => !ids.has(x.id));
-          const moved = list.filter((x) => ids.has(x.id));
-          list.length = 0;
-          list.push(...(name === 'front' ? [...rest, ...moved] : [...moved, ...rest]));
+          const rest = blocks.filter((b) => !isSel(b)), moved = blocks.filter(isSel);
+          blocks.splice(0, blocks.length, ...(name === 'front' ? [...rest, ...moved] : [...moved, ...rest]));
         } else if (name === 'forward') {
-          for (let i = list.length - 2; i >= 0; i--) if (ids.has(list[i].id) && !ids.has(list[i + 1].id)) [list[i], list[i + 1]] = [list[i + 1], list[i]];
-        } else for (let i = 1; i < list.length; i++) if (ids.has(list[i].id) && !ids.has(list[i - 1].id)) [list[i], list[i - 1]] = [list[i - 1], list[i]];
+          for (let i = blocks.length - 2; i >= 0; i--) if (isSel(blocks[i]) && !isSel(blocks[i + 1])) [blocks[i], blocks[i + 1]] = [blocks[i + 1], blocks[i]];
+        } else for (let i = 1; i < blocks.length; i++) if (isSel(blocks[i]) && !isSel(blocks[i - 1])) [blocks[i], blocks[i - 1]] = [blocks[i - 1], blocks[i]];
+        const next = blocks.flat();
+        if (inside) {
+          // Back into the group's own places in the page's order.
+          let j = 0;
+          for (let i = 0; i < list.length; i++) if (list[i].group === S.inGroup) list[i] = next[j++];
+        } else list.splice(0, list.length, ...next);
       });
     }
+    if (name === 'group') return group();
+    if (name === 'ungroup') return ungroup();
   }
   function paste() {
     if (!S.clip) return;
@@ -328,13 +415,16 @@ const App = (() => {
       Object.assign(S.doc.textures, S.clip.textures || {});
       const list = Model.surfaceItems(S.doc, S.surface);
       const shift = Model.surfaceOrigin(S.doc, S.surface) - (S.clip.org || 0);
-      const copies = S.clip.items.map((it) => ({ ...clone(it), id: uid('i'), next: null, x: it.x + shift }));
+      // Groups pasted come as new groups of their own.
+      const copies = copiesOf(S.clip.items, null, S.clip.groups).map((c) => ({ ...c, x: c.x + shift }));
       // Pasting onto the same spot offsets it so you can see the copy.
       const clash = copies.some((c) => list.some((x) => Math.abs(x.x - c.x) < 0.5 && Math.abs(x.y - c.y) < 0.5));
       if (clash) copies.forEach((c) => ((c.x += 5), (c.y += 5)));
       list.push(...copies);
+      Model.tidyGroups(list);
       S.sel = new Set(copies.map((c) => c.id));
       S.clip.items = clone(copies);
+      S.clip.groups = Object.fromEntries([...new Set(copies.map((c) => c.group).filter(Boolean))].map((g) => [g, S.doc.groups[g]]));
       S.clip.org = Model.surfaceOrigin(S.doc, S.surface);
     });
   }
@@ -1253,6 +1343,7 @@ const App = (() => {
     if (ctrl && k.toLowerCase() === 'd') return e.preventDefault(), cmd('duplicate');
     if (ctrl && k.toLowerCase() === 'l') return e.preventDefault(), cmd('lock');
     if (ctrl && (k === ']' || k === '}')) return e.preventDefault(), cmd(e.shiftKey ? 'front' : 'forward');
+    if (ctrl && k.toLowerCase() === 'g') return e.preventDefault(), cmd(e.shiftKey ? 'ungroup' : 'group');
     if (ctrl && (k === '[' || k === '{')) return e.preventDefault(), cmd(e.shiftKey ? 'back' : 'backward');
     if (ctrl && (k === '=' || k === '+')) return e.preventDefault(), Editor.zoomAt(S.zoom * 1.25);
     if (ctrl && k === '-') return e.preventDefault(), Editor.zoomAt(S.zoom / 1.25);
@@ -1264,6 +1355,12 @@ const App = (() => {
       if (S.linkFrom) return Panels.finishLink(null);
       if (S.crop) return endCrop();
       if (S.tool !== 'select') return setTool('select');
+      // Inside a group: Esc steps back out to the whole group.
+      if (S.inGroup) {
+        const gid = S.inGroup;
+        S.inGroup = null;
+        return select(Model.groupMembers(Model.surfaceItems(S.doc, S.surface), gid).map((it) => it.id));
+      }
       return select([]);
     }
     if (k === 'Enter' && S.crop) return endCrop();
@@ -1470,6 +1567,9 @@ const App = (() => {
             ],
           },
           '-',
+          { label: '&Group', key: 'Ctrl+G', disabled: sel.length < 2, run: () => cmd('group') },
+          { label: '&Ungroup', key: 'Ctrl+Shift+G', disabled: !sel.some((it) => it.group), run: () => cmd('ungroup') },
+          '-',
           { label: '&Lock or unlock', key: 'Ctrl+L', disabled: noSel, run: () => cmd('lock') },
           '-',
           { label: 'Edit &photo…', key: 'Ctrl+Shift+E', disabled: !(sel.length === 1 && PhotoEdit.canEdit(sel[0])), run: () => PhotoEdit.open(sel[0]) },
@@ -1551,7 +1651,7 @@ const App = (() => {
   }
 
   return {
-    S, unit, history, change, render, markDirty, select, selectionChanged, goTo, setTool,
+    S, unit, history, change, render, markDirty, select, selectionChanged, withGroups, selectedGroup, copiesOf, goTo, setTool,
     addItem, pickPhotoFor, setPhoto, placePhotos, startCrop, endCrop, cmd, align, pageOp,
     kit, status, zoomChanged, init, openExport, save, newDocument, loadDoc, setCoverLayout, overrideMaster, resetToMaster, openSettings, updateTitle,
   };

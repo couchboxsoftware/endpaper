@@ -47,6 +47,37 @@ const Assets = (() => {
 })();
 
 const Render = (() => {
+  // A frame's edge moved over its photo (a crop): the photo stays where it is on the page.
+  // o is the frame before the move; hx, hy which edges moved (-1 left/top, 1 right/bottom, 0 not).
+  // The photo only grows when the frame would show a gap it didn't have before, and then from the
+  // frame's fixed edge, so the rest of the crop holds. Gaps it already had (Fit in frame) stay.
+  function cropTo(it, o, hx, hy, a) {
+    if (!a) return;
+    it.ox = o.ox + (hx === -1 ? it.w - o.w : 0);
+    it.oy = o.oy + (hy === -1 ? it.h - o.h : 0);
+    it.s = o.s;
+    const d = PhotoEdit.dims(it, a);
+    const E = 0.01;
+    const pw = d.w * o.s, ph = d.h * o.s;
+    const had = { l: o.ox <= E, t: o.oy <= E, r: o.ox + pw >= o.w - E, b: o.oy + ph >= o.h - E };
+    const ax = hx === 1 ? 0 : hx === -1 ? it.w : it.w / 2;
+    const ay = hy === 1 ? 0 : hy === -1 ? it.h : it.h / 2;
+    const at = (s) => ({ ox: ax + (it.ox - ax) * s, oy: ay + (it.oy - ay) * s, pw: pw * s, ph: ph * s });
+    const covered = (s) => {
+      const p = at(s);
+      return (!had.l || p.ox <= E) && (!had.t || p.oy <= E) && (!had.r || p.ox + p.pw >= it.w - E) && (!had.b || p.oy + p.ph >= it.h - E);
+    };
+    if (covered(1)) return;
+    let lo = 1, hi = 2;
+    while (!covered(hi) && hi < 1e4) hi *= 2;
+    for (let i = 0; i < 40; i++) {
+      const mid = (lo + hi) / 2;
+      if (covered(mid)) hi = mid;
+      else lo = mid;
+    }
+    const p = at(hi);
+    Object.assign(it, { s: o.s * hi, ox: p.ox, oy: p.oy });
+  }
   // Photo placement inside its frame: fill (cover) or fit (contain), centred.
   function fitImage(it, a, mode = 'fill') {
     if (!a) return;
@@ -147,5 +178,5 @@ const Render = (() => {
     return c;
   }
 
-  return { fitImage, ppi, itemsOf, ctxFor, draw, drawItem, thumb };
+  return { fitImage, cropTo, ppi, itemsOf, ctxFor, draw, drawItem, thumb };
 })();

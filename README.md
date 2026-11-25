@@ -108,7 +108,7 @@ Then one check per feature:
 
 - File Explorer right-click. Double-clicking a .endpaper file opens it in the installed app.
 - The installer isn't code-signed (see Install).
-- Mixed styles inside one paragraph (one bold word), hyphenation, spot (Pantone) colours, grouping, hardback covers.
+- Mixed styles inside one paragraph (one bold word), hyphenation, spot (Pantone) colours, groups inside groups, hardback covers.
 - Font collections (.ttc files, like Cambria) aren't listed.
 - Photos are treated as sRGB.
 - The PDF/X-4 files haven't been through a certified preflight (Acrobat or the printer's). Send a test file and get a proof first.

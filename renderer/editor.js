@@ -272,8 +272,21 @@ const Editor = (() => {
       }
     }
 
-    // Selection.
+    // Selection. A group, or several things, gets one box round them all, with corner handles to
+    // scale them together and one to turn them (under each one's own outline, so a double-click on
+    // one still reaches it).
     const items = selectedItems();
+    if (items.length > 1 && !S().crop) {
+      const gg = geoFor(S().surface);
+      if (gg) {
+        const b = boundsOf(items);
+        const locked = items.some((x) => x.locked);
+        const handles = locked ? '' : ['nw', 'ne', 'se', 'sw'].map((h) => `<i class="h h-${h}" data-h="${h}"></i>`).join('') + '<i class="h h-rot" data-h="rot"></i>';
+        const gid = App.selectedGroup();
+        const name = gid && S().doc.groups[gid] ? `<span class="sel-group-name">${esc(S().doc.groups[gid].name)}</span>` : '';
+        overlay.insertAdjacentHTML('beforeend', `<div class="sel sel-group${gid ? ' is-group' : ''}${locked ? ' sel-locked' : ''}" style="left:${gx(gg) + b.x0 * k}px;top:${gg.oy + b.y0 * k}px;width:${(b.x1 - b.x0) * k}px;height:${(b.y1 - b.y0) * k}px">${name}${handles}</div>`);
+      }
+    }
     for (const it of items) {
       const gg = geoFor(S().surface);
       if (!gg) continue;
@@ -282,7 +295,7 @@ const Editor = (() => {
         single && !S().crop
           ? (it.type === 'line' ? ['w', 'e'] : ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']).map((h) => `<i class="h h-${h}" data-h="${h}"></i>`).join('') + '<i class="h h-rot" data-h="rot"></i>'
           : '';
-      overlay.insertAdjacentHTML('beforeend', `<div class="sel ${it.locked ? 'sel-locked' : ''}" data-id="${it.id}" style="${boxStyle(gg, it)}">${handles}</div>`);
+      overlay.insertAdjacentHTML('beforeend', `<div class="sel ${it.locked ? 'sel-locked' : ''}${items.length > 1 ? ' sel-member' : ''}" data-id="${it.id}" style="${boxStyle(gg, it)}">${handles}</div>`);
     }
     if (S().crop) {
       const it = Model.findItem(doc, S().crop)?.item;
@@ -302,6 +315,39 @@ const Editor = (() => {
     return `left:${gx(g) + it.x * k}px;top:${g.oy + it.y * k}px;width:${it.w * k}px;height:${it.h * k}px;${it.rot ? `transform:rotate(${it.rot}deg);` : ''}`;
   };
   const geoFor = (s) => geo.find((g) => Model.sameSurface(g.surface, s));
+
+  /* ---------- groups and several things at once ---------- */
+  // The box (mm) round some boxes, turned ones included.
+  function boundsOf(items) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const it of items) {
+      const a = ((it.rot || 0) * Math.PI) / 180, c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a));
+      const hw = (it.w * c + it.h * s) / 2, hh = (it.w * s + it.h * c) / 2;
+      const cx = it.x + it.w / 2, cy = it.y + it.h / 2;
+      x0 = Math.min(x0, cx - hw);
+      x1 = Math.max(x1, cx + hw);
+      y0 = Math.min(y0, cy - hh);
+      y1 = Math.max(y1, cy + hh);
+    }
+    return { x0, y0, x1, y1 };
+  }
+  // One box scaled by s from (ax, ay), from how it was (o): its place and size, and everything
+  // in it, so it looks the same only bigger or smaller: a photo's zoom and crop, line widths,
+  // rounded corners, and text sizes, spacing and indents.
+  function scaleItem(it, o, ax, ay, s) {
+    const cx = ax + (o.x + o.w / 2 - ax) * s, cy = ay + (o.y + o.h / 2 - ay) * s;
+    it.w = o.w * s;
+    it.h = o.h * s;
+    it.x = cx - it.w / 2;
+    it.y = cy - it.h / 2;
+    if (o.strokeW != null) it.strokeW = o.strokeW * s;
+    if (o.radius) it.radius = o.radius * s;
+    if (it.type === 'image' && o.s != null) Object.assign(it, { s: o.s * s, ox: o.ox * s, oy: o.oy * s });
+    if (it.type === 'text' && o.style) {
+      const r = (v) => Math.round(v * s * 100) / 100;
+      it.style = { ...clone(o.style), size: r(o.style.size), leading: r(o.style.leading || o.style.size * 1.2), spaceAfter: r(o.style.spaceAfter || 0), indent: r(o.style.indent || 0) };
+    }
+  }
 
   function selectedItems() {
     const { doc, surface, sel } = S();
@@ -423,6 +469,19 @@ const Editor = (() => {
       return;
     }
 
+    // The handles of a group (or several things): scale them all from the opposite corner, or turn
+    // them all round their middle.
+    if (h && h.closest('.sel-group')) {
+      const items = selectedItems();
+      if (!items.length || items.some((x) => x.locked)) return;
+      App.history.begin();
+      const box = boundsOf(items);
+      const orig = items.map((it) => ({ it, o: { ...clone(it), style: it.type === 'text' ? clone(Model.styleOf(doc, it)) : undefined } }));
+      if (h.dataset.h === 'rot') drag = { kind: 'grotate', g: geoFor(S().surface), start: p, box, orig };
+      else drag = { kind: 'gscale', g: geoFor(S().surface), start: p, box, orig, h: h.dataset.h };
+      e.preventDefault();
+      return;
+    }
     if (h) {
       const it = selectedItems()[0];
       if (!it) return;
@@ -437,6 +496,14 @@ const Editor = (() => {
     let id = null;
     if (itemEl && !itemEl.dataset.master && !itemEl.classList.contains('locked')) id = itemEl.dataset.id;
     else if (selEl && !selEl.classList.contains('sel-locked')) id = selEl.dataset.id;
+    // The box round a group or several things: drag anywhere in it to move them all.
+    if (!id && selEl && selEl.classList.contains('sel-group')) {
+      App.history.begin();
+      const items = selectedItems().filter((x) => !x.locked);
+      drag = { kind: 'move', g: geoFor(S().surface), start: p, items: items.map((it) => ({ it, x: it.x, y: it.y })), moved: false, alt: e.altKey };
+      e.preventDefault();
+      return;
+    }
     if (id) {
       // Two presses on the same box in quick succession open it (type into text, crop a photo).
       // Counted here because the browser's own dblclick never arrives: the press is
@@ -451,12 +518,14 @@ const Editor = (() => {
       const found = Model.findItem(doc, id, S().surface);
       if (found && !Model.sameSurface(found.surface, S().surface)) App.goTo(found.surface, { keepSel: false });
       const sel = S().sel;
+      // A box in a group picks up its whole group (unless you've gone into the group).
+      const ids = App.withGroups([id]);
       if (e.shiftKey || e.ctrlKey) {
-        if (sel.has(id)) sel.delete(id);
-        else sel.add(id);
+        const on = !sel.has(id);
+        for (const x of ids) on ? sel.add(x) : sel.delete(x);
         App.selectionChanged();
         if (!sel.has(id)) return;
-      } else if (!sel.has(id)) App.select([id]);
+      } else if (!sel.has(id)) App.select(ids);
       App.history.begin();
       const items = selectedItems().filter((x) => !x.locked);
       drag = { kind: 'move', g: geoFor(S().surface), start: p, items: items.map((it) => ({ it, x: it.x, y: it.y })), moved: false, alt: e.altKey };
@@ -496,7 +565,9 @@ const Editor = (() => {
       if (!drag.moved && drag.alt) {
         // Alt-drag leaves a copy behind.
         const list = Model.surfaceItems(doc, S().surface);
-        for (const d of drag.items) list.splice(list.indexOf(d.it), 0, { ...clone(d.it), id: uid('i'), next: null });
+        const copies = App.copiesOf(drag.items.map((d) => d.it), list);
+        drag.items.forEach((d, i) => list.splice(list.indexOf(d.it), 0, copies[i]));
+        Model.tidyGroups(list);
       }
       drag.moved = true;
       let mx = dx, my = dy;
@@ -522,15 +593,42 @@ const Editor = (() => {
       const hy = h.includes('s') ? 1 : h.includes('n') ? -1 : 0;
       let nw = Math.max(1, o.w + hx * lx);
       let nh = it.type === 'line' ? o.h : Math.max(1, o.h + hy * ly);
+      // A photo's corner scales the whole picture, frame and photo together, from the opposite
+      // corner (Shift: change the frame's shape instead, which crops like a side).
+      const photoScale = it.type === 'image' && hx && hy && !e.shiftKey;
+      if (photoScale) {
+        // How far along the diagonal the pointer has gone.
+        const s = Math.max(1 / Math.max(o.w, o.h), (hx * lx * o.w + hy * ly * o.h) / (o.w * o.w + o.h * o.h) + 1);
+        nw = o.w * s;
+        nh = o.h * s;
+      }
       // Edge snapping (boxes that aren't rotated).
-      if (snapOn && !o.rot && drag.g) {
+      if (snapOn && !o.rot && drag.g && photoScale) {
+        // Scaling a photo: snap whichever moving edge comes close, keeping the shape.
+        const t = snapTargets(drag.g, new Set([it.id]));
+        const sx = snap1([hx === 1 ? o.x + nw : o.x + o.w - nw], t.xs, tol);
+        const sy = snap1([hy === 1 ? o.y + nh : o.y + o.h - nh], t.ys, tol);
+        const pick = sx && (!sy || Math.abs(sx.d) <= Math.abs(sy.d)) ? 'x' : sy ? 'y' : null;
+        if (pick === 'x') {
+          const w2 = nw + hx * sx.d;
+          nh *= w2 / nw;
+          nw = w2;
+          guidesShown.push({ x: gx(drag.g) + sx.t * k });
+        } else if (pick === 'y') {
+          const h2 = nh + hy * sy.d;
+          nw *= h2 / nh;
+          nh = h2;
+          guidesShown.push({ y: drag.g.oy + sy.t * k });
+        }
+      } else if (snapOn && !o.rot && drag.g) {
         const t = snapTargets(drag.g, new Set([it.id]));
         if (hx === 1) { const s = snap1([o.x + nw], t.xs, tol); if (s) (nw += s.d), guidesShown.push({ x: gx(drag.g) + s.t * k }); }
         if (hx === -1) { const s = snap1([o.x + o.w - nw], t.xs, tol); if (s) (nw -= s.d), guidesShown.push({ x: gx(drag.g) + s.t * k }); }
         if (hy === 1 && it.type !== 'line') { const s = snap1([o.y + nh], t.ys, tol); if (s) (nh += s.d), guidesShown.push({ y: drag.g.oy + s.t * k }); }
         if (hy === -1 && it.type !== 'line') { const s = snap1([o.y + o.h - nh], t.ys, tol); if (s) (nh -= s.d), guidesShown.push({ y: drag.g.oy + s.t * k }); }
       }
-      if (e.shiftKey && hx && hy) {
+      // Shift on a corner keeps the shape (photos keep it anyway, unless Shift is held).
+      if (e.shiftKey && hx && hy && it.type !== 'image') {
         if (nw / nh > drag.aspect) nh = nw / drag.aspect;
         else nw = nh * drag.aspect;
       }
@@ -539,13 +637,44 @@ const Editor = (() => {
       const cy = o.y + o.h / 2 + dcl.x * Math.sin(a) + dcl.y * Math.cos(a);
       Object.assign(it, { w: nw, h: nh, x: cx - nw / 2, y: cy - nh / 2 });
       if (it.type === 'image') {
-        if (it.fit === 'custom') {
-          it.ox = o.ox + (hx === -1 ? nw - o.w : 0);
-          it.oy = o.oy + (hy === -1 ? nh - o.h : 0);
-        } else Render.fitImage(it, Assets.get(it.asset) || doc.assets[it.asset], it.fit);
+        if (photoScale) {
+          // Scaled: the photo grows or shrinks with its frame, so the same part stays in view.
+          const s = nw / o.w;
+          Object.assign(it, { s: o.s * s, ox: o.ox * s, oy: o.oy * s });
+        } else Render.cropTo(it, o, hx, hy, Assets.get(it.asset) || doc.assets[it.asset]);
       }
       if (it.type === 'text') Layout.invalidate();
       drag.info = { x: p.x, y: p.y, text: `${Units.fmt(nw, App.unit(), doc.dpi)} × ${Units.label(nh, App.unit(), doc.dpi)}` };
+      paintSelected();
+    } else if (drag.kind === 'gscale') {
+      // Scale the lot from the opposite corner, keeping its shape.
+      const { box, h } = drag;
+      const hx = h.includes('e') ? 1 : -1, hy = h.includes('s') ? 1 : -1;
+      const W = box.x1 - box.x0, H = box.y1 - box.y0;
+      const ax = hx === 1 ? box.x0 : box.x1, ay = hy === 1 ? box.y0 : box.y1;
+      const s = Math.max(0.02, 1 + (hx * dx * W + hy * dy * H) / (W * W + H * H));
+      for (const { it, o } of drag.orig) scaleItem(it, o, ax, ay, s);
+      Layout.invalidate();
+      drag.info = { x: p.x, y: p.y, text: `${Units.fmt(W * s, App.unit(), doc.dpi)} × ${Units.label(H * s, App.unit(), doc.dpi)}` };
+      paintSelected();
+    } else if (drag.kind === 'grotate') {
+      // Turn the lot round its middle.
+      const { box, g } = drag;
+      const cxm = (box.x0 + box.x1) / 2, cym = (box.y0 + box.y1) / 2;
+      const c = { x: gx(g) + cxm * k, y: g.oy + cym * k };
+      const a0 = Math.atan2(drag.start.y - c.y, drag.start.x - c.x);
+      let d = ((Math.atan2(p.y - c.y, p.x - c.x) - a0) * 180) / Math.PI;
+      if (e.shiftKey) d = Math.round(d / 15) * 15;
+      const r = (d * Math.PI) / 180;
+      for (const { it, o } of drag.orig) {
+        const ox = o.x + o.w / 2 - cxm, oy = o.y + o.h / 2 - cym;
+        it.x = cxm + ox * Math.cos(r) - oy * Math.sin(r) - o.w / 2;
+        it.y = cym + ox * Math.sin(r) + oy * Math.cos(r) - o.h / 2;
+        let rot = (o.rot || 0) + d;
+        rot = ((rot % 360) + 360) % 360;
+        it.rot = Math.round((rot > 180 ? rot - 360 : rot) * 10) / 10;
+      }
+      drag.info = { x: p.x, y: p.y, text: `${Math.round(d)}°` };
       paintSelected();
     } else if (drag.kind === 'rotate') {
       const { it, g } = drag;
@@ -568,7 +697,7 @@ const Editor = (() => {
           const ix = gx(g) + it.x * k, iy = g.oy + it.y * k;
           return ix < r.x + r.w && ix + it.w * k > r.x && iy < r.y + r.h && iy + it.h * k > r.y;
         });
-        S().sel = new Set([...drag.base, ...hit.map((x) => x.id)]);
+        S().sel = new Set(App.withGroups([...drag.base, ...hit.map((x) => x.id)]));
       }
       if (drag.kind === 'create') {
         const g = drag.g;
@@ -615,7 +744,8 @@ const Editor = (() => {
       }
       moveAcrossPages(d.items.map((x) => x.it));
     }
-    if (['move', 'resize', 'rotate', 'pan-img'].includes(d.kind)) App.history.commit({ move: 'Move', resize: 'Resize', rotate: 'Rotate', 'pan-img': 'Move photo' }[d.kind]);
+    if (['move', 'resize', 'rotate', 'pan-img', 'gscale', 'grotate'].includes(d.kind)) App.history.commit({ move: 'Move', resize: 'Resize', rotate: 'Rotate', 'pan-img': 'Move photo', gscale: 'Resize', grotate: 'Rotate' }[d.kind]);
+    if (d.kind === 'gscale') render(); // text in the group reflows
   }
 
   // A box dragged onto the other page of a spread moves to that page.
@@ -667,6 +797,12 @@ const Editor = (() => {
     const found = id && Model.findItem(S().doc, id, S().surface);
     if (!found || found.item.locked) return;
     if (S().editing && S().editing.id === id) return; // already typing in it
+    // A box in a group: the first double-click goes into the group, with just this box picked.
+    if (found.item.group && S().inGroup !== found.item.group) {
+      S().inGroup = found.item.group;
+      App.select([id]);
+      return App.status('In the group: click its boxes one at a time. Esc or click outside to come out.');
+    }
     if (found.item.type === 'text') Text.edit(found.item);
     else if (found.item.type === 'image') {
       if (!found.item.asset) App.pickPhotoFor(found.item);
@@ -684,8 +820,9 @@ const Editor = (() => {
         return contextMenu(e.clientX, e.clientY, [{ label: 'Edit on this page only', key: 'Ctrl+Shift+click', run: () => App.overrideMaster(g.surface.idx, el.dataset.id) }]);
     }
     const id = el && !el.dataset.master ? el.dataset.id : null;
-    if (id && !S().sel.has(id)) App.select([id]);
+    if (id && !S().sel.has(id)) App.select(App.withGroups([id]));
     const has = S().sel.size > 0;
+    const grouped = selectedItems().some((x) => x.group);
     const one = selectedItems()[0];
     const fromMaster = selectedItems().filter((x) => x.masterRef);
     const photos = PhotoEdit.photosIn(selectedItems());
@@ -708,6 +845,9 @@ const Editor = (() => {
       ] : []),
       ...((one && one.type === 'image') || photos.length ? ['-'] : []),
       ...(one && one.type === 'text' ? [{ label: 'Edit text', run: () => Text.edit(one) }, ...(PlaceText.canFormat(one) ? [{ label: 'Format story…', run: () => PlaceText.format(one) }] : []), { label: 'Continue in another box', run: () => Panels.startLink(one) }, '-'] : []),
+      { label: 'Group', key: 'Ctrl+G', disabled: S().sel.size < 2, run: () => App.cmd('group') },
+      ...(grouped ? [{ label: 'Ungroup', key: 'Ctrl+Shift+G', run: () => App.cmd('ungroup') }] : []),
+      '-',
       { label: one && one.locked ? 'Unlock' : 'Lock', disabled: !has, run: () => App.cmd('lock') },
       { label: 'Delete', key: 'Del', disabled: !has, run: () => App.cmd('delete') },
     ]);
