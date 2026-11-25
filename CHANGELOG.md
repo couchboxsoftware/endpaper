@@ -19,6 +19,18 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.19 · 25 Nov 2026
+Remove a photo's background in one click, then touch it up.
+
+### New
+- Remove background, a new photo effect (Edit photo, Add, Shape and blending), finds the subject (people, pets, products) and removes the rest. It works on your own computer: nothing is uploaded.
+- Touch up the edges on the photo: the wand removes or keeps an area of similar colour, and the brush paints parts away or back. Hold Alt to do the opposite, and Undo steps back.
+- Soften edge and Tighten edge tidy the cut-out's edge, and Show removed parts as checks makes it easy to see what's gone.
+- The cut-out is see-through on the page, in exports and in the print PDF, turns with Flip and rotate, and a drop shadow takes its shape.
+
+### Improved
+- Copy effects leaves a removed background behind, because each photo needs its own.
+
 ## 0.1.18 · 25 Nov 2026
 Save, open, export and bring in pictures from where you were last time.
 
