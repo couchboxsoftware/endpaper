@@ -19,6 +19,17 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.18 · 25 Nov 2026
+Save, open, export and bring in pictures from where you were last time.
+
+### New
+- Endpaper remembers the last folder you saved a design to, and File, Open starts there too, even after closing and opening Endpaper again.
+- It remembers where you last brought in a picture, separately, so the picture picker opens there without changing where designs are saved.
+- It remembers where you last exported, separately again, for print PDFs and pictures.
+
+### Improved
+- Save as starts in the folder of the design that's open.
+
 ## 0.1.17 · 25 Nov 2026
 Your story keeps its empty lines, and whether they start a new page.
 

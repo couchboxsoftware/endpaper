@@ -62,6 +62,7 @@ const DEFAULTS = {
   recent: [],
   reopen: [], // designs to open again after an update: [{ path, surface }]
   openAfterExport: true, // the Export window's "Open ... after export" tick box, as last left
+  folders: {}, // the remembered folders: { designs, pictures, exports } (see "remembered folders")
   hintsOff: {}, // hint pop-ups turned off with "Don't show this again": { id: when } (renderer/hints.js)
 };
 let settings = { ...DEFAULTS, ...readJSON(user('settings.json'), {}) };
@@ -405,8 +406,32 @@ function atomicWrite(file, data) {
 }
 const docFilters = [{ name: 'Endpaper design', extensions: [FILE_EXT] }];
 
+/* ---------- remembered folders ----------
+   Each kind of file window starts where you last were, even after closing Endpaper:
+   designs (saving, and File, Open), pictures (bringing in an image) and exports. They're kept
+   apart, so picking a photo doesn't change where designs are saved. A folder that's gone (an
+   unplugged USB stick) is ignored, and the window starts where Windows would start it. */
+function lastFolder(kind) {
+  const d = settings.folders && settings.folders[kind];
+  try {
+    return d && fs.statSync(d).isDirectory() ? d : null;
+  } catch {
+    return null;
+  }
+}
+function rememberFolder(kind, dir) {
+  if (!dir) return;
+  settings.folders = { ...(settings.folders || {}), [kind]: dir };
+  saveSettings();
+}
+// A defaultPath for a window: the remembered folder, with the suggested file name in it.
+function startIn(kind, name) {
+  const d = lastFolder(kind);
+  return d ? (name ? path.join(d, name) : d) : name || undefined;
+}
+
 handle('file:open', async () => {
-  const r = await dialog.showOpenDialog(win, { properties: ['openFile'], filters: docFilters });
+  const r = await dialog.showOpenDialog(win, { defaultPath: startIn('designs'), properties: ['openFile'], filters: docFilters });
   if (r.canceled || !r.filePaths[0]) return null;
   return readDoc(r.filePaths[0]);
 });
@@ -418,25 +443,30 @@ function readDoc(p) {
 handle('file:read', (p) => readDoc(p));
 handle('file:save', async ({ path: p, text, name, saveAs }) => {
   if (!p || saveAs) {
-    const r = await dialog.showSaveDialog(win, { defaultPath: (name || 'Untitled') + '.' + FILE_EXT, filters: docFilters });
+    // A new design starts in the remembered designs folder; Save as starts beside the design.
+    const file = (name || 'Untitled') + '.' + FILE_EXT;
+    const r = await dialog.showSaveDialog(win, { defaultPath: p ? path.join(path.dirname(p), file) : startIn('designs', file), filters: docFilters });
     if (r.canceled || !r.filePath) return null;
     p = r.filePath;
   }
   atomicWrite(p, text);
   addRecent(p);
+  rememberFolder('designs', path.dirname(p));
   return p;
 });
 // ENDPAPER_TEST_EXPORT_DIR (tests only): export straight into that folder, without asking where.
 const testExportDir = process.env.ENDPAPER_TEST && process.env.ENDPAPER_TEST_EXPORT_DIR;
 handle('file:export', async ({ bytes, name, ext, label }) => {
-  const r = testExportDir ? { filePath: path.join(testExportDir, path.basename(name)) } : await dialog.showSaveDialog(win, { defaultPath: name, filters: [{ name: label, extensions: [ext] }] });
+  const r = testExportDir ? { filePath: path.join(testExportDir, path.basename(name)) } : await dialog.showSaveDialog(win, { defaultPath: startIn('exports', name), filters: [{ name: label, extensions: [ext] }] });
   if (r.canceled || !r.filePath) return null;
   atomicWrite(r.filePath, Buffer.from(bytes));
+  rememberFolder('exports', path.dirname(r.filePath));
   return r.filePath;
 });
 handle('file:exportMany', async ({ files }) => {
-  const r = testExportDir ? { filePaths: [testExportDir] } : await dialog.showOpenDialog(win, { title: 'Choose a folder for the images', properties: ['openDirectory', 'createDirectory'] });
+  const r = testExportDir ? { filePaths: [testExportDir] } : await dialog.showOpenDialog(win, { title: 'Choose a folder for the images', defaultPath: startIn('exports'), properties: ['openDirectory', 'createDirectory'] });
   if (r.canceled || !r.filePaths[0]) return null;
+  rememberFolder('exports', r.filePaths[0]);
   for (const f of files) atomicWrite(path.join(r.filePaths[0], f.name), Buffer.from(f.bytes));
   return r.filePaths[0];
 });
@@ -448,8 +478,9 @@ handle('recent:forget', (p) => {
 
 const IMG_MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif', '.bmp': 'image/bmp' };
 handle('image:pick', async (multi = true) => {
-  const r = await dialog.showOpenDialog(win, { properties: multi ? ['openFile', 'multiSelections'] : ['openFile'], filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'] }] });
+  const r = await dialog.showOpenDialog(win, { defaultPath: startIn('pictures'), properties: multi ? ['openFile', 'multiSelections'] : ['openFile'], filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'] }] });
   if (r.canceled) return [];
+  if (r.filePaths[0]) rememberFolder('pictures', path.dirname(r.filePaths[0]));
   return r.filePaths.map((p) => ({ name: path.basename(p), mime: IMG_MIME[path.extname(p).toLowerCase()] || 'image/png', bytes: fs.readFileSync(p) }));
 });
 

@@ -76,7 +76,7 @@ This checks the changelog entry, that everything's committed, that the GitHub CL
 
 Everything lives in `%APPDATA%\Endpaper`:
 
-- `settings.json`: settings, recent files, turned-off hints (including "Try Inkdesktop"), whether to open files after export, and what to reopen after an update.
+- `settings.json`: settings, recent files, the three remembered folders (where you last saved a design, brought in a picture and exported), turned-off hints (including "Try Inkdesktop"), whether to open files after export, and what to reopen after an update.
 - `brandkit.json`: your brand kit (colours, text styles, logos).
 - `templates\`: your templates. Deleted ones go to `bin\` and stay there for 30 days.
 - `recovery\`: copies of unsaved work, made every 20 seconds and offered back if Endpaper closes unexpectedly.
@@ -98,6 +98,7 @@ Then one check per feature:
 
 - `export-open-check.js`: with Inkdesktop installed, the Export window offers "Open files in Inkdesktop after export" (ticked to start with, then as last left); a book export opens its inside pages in Inkdesktop and shows the folder; pictures show the folder. Without it: "Open file(s) after export", and "Do you want to try Inkdesktop?" before anything opens, in Inkdesktop's colours; its buttons, "Don't ask again", and Settings, Hints bringing it back. It uses a stand-in Inkdesktop (`ENDPAPER_TEST_INKDESKTOP`) and exports to a throwaway folder (`ENDPAPER_TEST_EXPORT_DIR`), and nothing is really opened.
 - `cover-pages-check.js`: with the cover as single pages, a box across the fold shows on the front and back (and inside front and back) thumbnails, and changing it on one page redraws the other's thumbnail too, both ways, and after undo.
+- `folders-check.js`: Endpaper remembers where you last saved a design (also where File, Open starts), brought in a picture and exported, each on its own and after opening again; Save as starts beside the open design; a folder that's gone is ignored. Windows' file windows are stood in for, so nothing waits for a click.
 
 `test/helper.js` is what they share, and `test/run-all.js` runs them in turn.
 
