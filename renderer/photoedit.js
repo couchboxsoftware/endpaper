@@ -27,12 +27,15 @@ const PhotoEdit = (() => {
     const key = [it.asset, s.toFixed(5), (it.s || 0).toFixed(6), JSON.stringify(fx), JSON.stringify(fx.filter((e) => /duotone|colour_overlay/.test(e.type)).map((e) => Object.values(e.p).filter((v) => v && v.sw).map((v) => Model.resolveColor(doc, v))))].join('|');
     let v = cache.get(key);
     if (!v) {
-      // A texture still loading: draw without it for now, and don't keep the result.
+      // A texture or mask still loading: draw without it for now, and don't keep the result.
       let missing = false;
       const texture = Textures.resolver(doc, { onMissing: () => (missing = true) });
-      const img = PhotoFX.render(a.img, it.effects, { scale: s, pxPerMm: it.s ? 1 / it.s : 12, color: colourOf(doc), seed: seedOf(it), texture });
+      const mask = maskResolver(doc, () => (missing = true));
+      const img = PhotoFX.render(a.img, it.effects, { scale: s, pxPerMm: it.s ? 1 / it.s : 12, color: colourOf(doc), seed: seedOf(it), texture, mask });
       const d = dims(it, a);
-      v = { img, w: d.w, h: d.h, get url() { return this._url || (this._url = img.toDataURL('image/jpeg', 0.92)); } };
+      // A removed background has to stay see-through on the page, so that one is a PNG.
+      const png = PhotoFX.hasAlpha(it.effects);
+      v = { img, w: d.w, h: d.h, get url() { return this._url || (this._url = png ? img.toDataURL('image/png') : img.toDataURL('image/jpeg', 0.92)); } };
       if (missing) return v;
       cache.set(key, v);
       if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
@@ -41,6 +44,23 @@ const PhotoEdit = (() => {
       cache.set(key, v); // most recently used last
     }
     return v;
+  }
+  // Remove background's masks are kept like photos (doc.assets: a greyscale PNG, white kept), so
+  // saving, undo and tidying up unused ones work the same. LIVE is the mask being edited in the
+  // Edit photo window, before Done saves it.
+  const LIVE = '__live';
+  let liveMask = null;
+  function maskResolver(doc, onMissing) {
+    return (id) => {
+      if (id === LIVE) return liveMask;
+      const m = Assets.get(id);
+      if (m) return m.img;
+      if (doc.assets[id]) {
+        onMissing && onMissing();
+        Assets.load(doc, id).then((x) => x && App.render());
+      }
+      return null;
+    };
   }
   // An effect's name in lists: Texture shows which texture.
   const labelOf = (doc, e) => (e.type === 'texture' ? `Texture · ${Textures.nameOf(doc, e.p && e.p.tex)}` : PhotoFX.TYPES[e.type]?.name || e.type);
@@ -61,20 +81,6 @@ const PhotoEdit = (() => {
     }
     const v = override || view(doc, it, { scale: it.s * k * 1.25 });
     const fx = PhotoFX.frameEffects(it.effects);
-    // Drop shadow: the frame's shape, moved and softened, under the photo.
-    if (fx.shadow) {
-      const sh = fx.shadow, ang = (sh.angle * Math.PI) / 180;
-      const rgb = Color.rgb(Model.resolveColor(doc, sh.colour) || { c: 0, m: 0, y: 0, k: 100 });
-      ctx.save();
-      const far = (W + H) * 4; // draw the box far away, so only its shadow lands here
-      ctx.shadowColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${sh.opacity / 100})`;
-      ctx.shadowBlur = sh.softness * k;
-      ctx.shadowOffsetX = Math.cos(ang) * sh.distance * k + far;
-      ctx.shadowOffsetY = Math.sin(ang) * sh.distance * k;
-      ctx.fillStyle = '#000';
-      ctx.fillRect(-far, 0, W, H);
-      ctx.restore();
-    }
     // The photo, cropped by the frame, faded at the edges if asked, on a canvas of its own.
     const c = document.createElement('canvas');
     c.width = Math.max(1, Math.ceil(W));
@@ -83,6 +89,24 @@ const PhotoEdit = (() => {
     g.imageSmoothingQuality = 'high';
     g.drawImage(v.img, it.ox * k, it.oy * k, v.w * it.s * k, v.h * it.s * k);
     if (fx.fade) fadeEdges(g, c.width, c.height, fx.fade.width * k);
+    // Drop shadow, under the photo: the frame's shape, or the cut-out's when the background is
+    // removed, moved and softened.
+    if (fx.shadow) {
+      const sh = fx.shadow, ang = (sh.angle * Math.PI) / 180;
+      const rgb = Color.rgb(Model.resolveColor(doc, sh.colour) || { c: 0, m: 0, y: 0, k: 100 });
+      ctx.save();
+      const far = (W + H) * 4; // draw the shape far away, so only its shadow lands here
+      ctx.shadowColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${sh.opacity / 100})`;
+      ctx.shadowBlur = sh.softness * k;
+      ctx.shadowOffsetX = Math.cos(ang) * sh.distance * k + far;
+      ctx.shadowOffsetY = Math.sin(ang) * sh.distance * k;
+      if (PhotoFX.hasAlpha(it.effects)) ctx.drawImage(c, -far, 0, W, H);
+      else {
+        ctx.fillStyle = '#000';
+        ctx.fillRect(-far, 0, W, H);
+      }
+      ctx.restore();
+    }
     ctx.save();
     if (fx.blend) ctx.globalCompositeOperation = BLEND[fx.blend] || 'source-over';
     ctx.drawImage(c, 0, 0, W, H);
@@ -151,8 +175,24 @@ const PhotoEdit = (() => {
     }
     g.putImageData(img, 0, 0);
   }
+  // The photo as it shows in its frame (cropped, with its effects and faded edges), w × h mm at
+  // pxPerMm: the shape a drop shadow takes when the background is removed.
+  function shapeOf(doc, it, pxPerMm) {
+    const a = it.asset && Assets.get(it.asset);
+    if (!a) return null;
+    const v = view(doc, it, { scale: it.s * pxPerMm });
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(it.w * pxPerMm));
+    c.height = Math.max(1, Math.round(it.h * pxPerMm));
+    const g = c.getContext('2d');
+    g.drawImage(v.img, it.ox * pxPerMm, it.oy * pxPerMm, v.w * it.s * pxPerMm, v.h * it.s * pxPerMm);
+    const fx = PhotoFX.frameEffects(it.effects);
+    if (fx.fade) fadeEdges(g, c.width, c.height, fx.fade.width * pxPerMm);
+    return c;
+  }
   // The soft shape of a drop shadow, as a greyscale mask, and where it goes (mm, frame space).
-  function shadowMask(it, sh, ppi = 150) {
+  // shape: the cut-out's picture (shapeOf) when the background is removed; the frame otherwise.
+  function shadowMask(it, sh, ppi = 150, shape = null) {
     const pxmm = ppi / 25.4;
     const soft = sh.softness, ang = (sh.angle * Math.PI) / 180;
     const pad = soft * 1.5 + 0.5;
@@ -165,8 +205,21 @@ const PhotoEdit = (() => {
     g.fillStyle = '#000';
     g.fillRect(0, 0, pw, ph);
     g.filter = soft > 0 ? `blur(${((soft * pxmm) / 2).toFixed(2)}px)` : 'none';
-    g.fillStyle = '#fff';
-    g.fillRect(pad * pxmm, pad * pxmm, it.w * pxmm, it.h * pxmm);
+    if (shape) {
+      // The cut-out's see-through-ness, in white, softened.
+      const s = document.createElement('canvas');
+      s.width = Math.max(1, Math.round(it.w * pxmm));
+      s.height = Math.max(1, Math.round(it.h * pxmm));
+      const sg = s.getContext('2d');
+      sg.drawImage(shape, 0, 0, s.width, s.height);
+      sg.globalCompositeOperation = 'source-in';
+      sg.fillStyle = '#fff';
+      sg.fillRect(0, 0, s.width, s.height);
+      g.drawImage(s, pad * pxmm, pad * pxmm, it.w * pxmm, it.h * pxmm);
+    } else {
+      g.fillStyle = '#fff';
+      g.fillRect(pad * pxmm, pad * pxmm, it.w * pxmm, it.h * pxmm);
+    }
     const d = g.getImageData(0, 0, pw, ph).data;
     const grey = new Uint8Array(pw * ph);
     for (let i = 0; i < grey.length; i++) grey[i] = d[i * 4];
@@ -175,7 +228,7 @@ const PhotoEdit = (() => {
 
   /* ---------- the Edit photo window ---------- */
   // A frame can have one of each of these (the frame effects, and flip and rotate).
-  const ONCE = new Set(['flip_rotate', 'fade_edges', 'blend_mode', 'drop_shadow']);
+  const ONCE = new Set(['flip_rotate', 'fade_edges', 'blend_mode', 'drop_shadow', 'cutout']);
   const canEdit = (it) => !!it && it.type === 'image' && !!it.asset && !!Assets.get(it.asset);
 
   function open(it) {
@@ -198,8 +251,49 @@ const PhotoEdit = (() => {
     const seed = seedOf(it);
     const pxPerMm = (it.s ? 1 / it.s : 12) * ps; // preview pixels per mm on the page
     const texture = Textures.resolver(doc, { onLoaded: () => ((lastKey = ''), repaint()) });
+    const mask = maskResolver(doc);
+
+    /* Remove background: the mask being edited (white keeps, black removes), at up to 2048 px,
+       with its own undo steps. It's LIVE while the window is open; Done saves it as a picture. */
+    const MK = Math.min(1, 2048 / Math.max(a.w, a.h));
+    let mk = null; // canvas
+    let mkRev = 0;
+    const mkUndo = [];
+    const cut = { tool: 'wand', mode: 'remove', tol: 25, size: 40, checks: true, busy: false, hover: null };
+    function maskCanvas(e) {
+      if (mk) return mk;
+      mk = document.createElement('canvas');
+      mk.width = Math.max(1, Math.round(a.w * MK));
+      mk.height = Math.max(1, Math.round(a.h * MK));
+      const g = mk.getContext('2d', { willReadFrequently: true });
+      const saved = e && e.p.mask && e.p.mask !== LIVE && Assets.get(e.p.mask);
+      if (saved) g.drawImage(saved.img, 0, 0, mk.width, mk.height);
+      else (g.fillStyle = '#fff'), g.fillRect(0, 0, mk.width, mk.height);
+      return mk;
+    }
+    // Before a change to the mask: keep a step to go back to, and use the live mask from now on.
+    function maskStep(e) {
+      const c = maskCanvas(e);
+      mkUndo.push(c.getContext('2d').getImageData(0, 0, c.width, c.height));
+      if (mkUndo.length > 12) mkUndo.shift();
+      liveMask = c;
+      e.p.mask = LIVE;
+    }
+    const maskChanged = () => (mkRev++, repaint(), syncCut());
+    // The photo at the mask's size, for the wand to compare colours.
+    let mkPx = null;
+    function maskPixels() {
+      if (mkPx) return mkPx;
+      const c = document.createElement('canvas');
+      c.width = mk.width;
+      c.height = mk.height;
+      const g = c.getContext('2d', { willReadFrequently: true });
+      g.drawImage(a.img, 0, 0, c.width, c.height);
+      return (mkPx = g.getImageData(0, 0, c.width, c.height).data);
+    }
 
     const m = openModal({
+      onClose: () => (liveMask = null),
       title: `Edit photo · ${doc.assets[it.asset]?.name || 'Photo'}`,
       wide: true,
       cls: 'edit-photo',
@@ -242,9 +336,15 @@ const PhotoEdit = (() => {
       const g = cv.getContext('2d');
       g.fillStyle = '#fff'; // the page under the photo, so blend modes and shadows show as printed
       g.fillRect(0, 0, cv.width, cv.height);
-      const key = JSON.stringify(PhotoFX.active(d.effects).filter((e) => !PhotoFX.TYPES[e.type].frame));
+      // Working on Remove background: show what's removed as checks, if asked.
+      const cutting = cutSel();
+      if (cutting && cut.checks && !before) {
+        g.fillStyle = checks(g);
+        g.fillRect(pad, pad, it.w * k, it.h * k);
+      }
+      const key = JSON.stringify(PhotoFX.active(d.effects).filter((e) => !PhotoFX.TYPES[e.type].frame)) + '|' + mkRev;
       if (key !== lastKey) {
-        lastImg = PhotoFX.render(src, d.effects, { scale: 1, pxPerMm, color, seed, texture });
+        lastImg = PhotoFX.render(src, d.effects, { scale: 1, pxPerMm, color, seed, texture, mask });
         lastKey = key;
       }
       const dm = dims(d, a);
@@ -252,6 +352,33 @@ const PhotoEdit = (() => {
       g.translate(pad, pad);
       drawFrame(g, doc, d, k, { img: lastImg, w: dm.w, h: dm.h });
       g.restore();
+      view_ = { k, pad, d, dm };
+      // The brush's size, where the pointer is.
+      if (cutting && cut.tool === 'brush' && cut.hover) {
+        const r = (cut.size / 2) * (cv.width / cv.getBoundingClientRect().width);
+        g.strokeStyle = 'rgba(0,0,0,0.6)';
+        g.lineWidth = 2;
+        g.beginPath();
+        g.arc(cut.hover[0], cut.hover[1], r, 0, Math.PI * 2);
+        g.stroke();
+        g.strokeStyle = 'rgba(255,255,255,0.9)';
+        g.lineWidth = 1;
+        g.stroke();
+      }
+    }
+    let view_ = null; // where the photo was last drawn on the preview
+    let checkPat = null;
+    function checks(g) {
+      if (checkPat) return checkPat;
+      const c = document.createElement('canvas');
+      c.width = c.height = 16;
+      const cg = c.getContext('2d');
+      cg.fillStyle = '#fff';
+      cg.fillRect(0, 0, 16, 16);
+      cg.fillStyle = '#d9d6e0';
+      cg.fillRect(0, 0, 8, 8);
+      cg.fillRect(8, 8, 8, 8);
+      return (checkPat = g.createPattern(c, 'repeat'));
     }
     const repaint = () => raf || (raf = requestAnimationFrame(paint));
 
@@ -283,6 +410,7 @@ const PhotoEdit = (() => {
       if (t.histogram || e.type === 'curves') drawHistogram(e);
       const curve = box.querySelector('.pe-curve');
       if (curve) bindCurve(curve, e);
+      syncCut();
       const tx = box.querySelector('.pe-texture');
       if (tx)
         Textures.picker(tx, doc, e.p.tex, (ref, c) => {
@@ -309,15 +437,235 @@ const PhotoEdit = (() => {
       if (p.type === 'texture') return '<div class="pe-texture"></div>';
       if (p.type === 'shuffle') return `<div class="pe-field"><span>${esc(p.label)}</span><button class="btn btn-sm pe-shuffle" data-shuffle="${p.k}" title="A fresh variation of this texture">Shuffle ↻</button></div>`;
       if (p.type === 'curve') return `<div class="pe-curve-box"><canvas class="pe-curve" width="256" height="256" data-k="${p.k}"></canvas><p class="hint">Drag the points. Click the line to add a point; drag a point off the box to remove it.</p></div>`;
+      if (p.type === 'mask') return cutHtml();
       return '';
     }
+
+    /* ----- Remove background: find the subject, then touch up with the wand and brush ----- */
+    const cutSel = () => {
+      const e = work.find((x) => x.id === selId);
+      return e && e.type === 'cutout' && e.on ? e : null;
+    };
+    function cutHtml() {
+      const seg = (name, opts, cur) => `<div class="seg" data-cut-seg="${name}">${opts.map(([v, l, t]) => `<button data-v="${v}" title="${esc(t || l)}" class="${v === cur ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+      return `<div class="pe-cut">
+        <div class="pe-cut-auto"><button class="btn btn-sm btn-accent" data-cut="auto" title="Finds the subject (people, pets, products) and removes the rest">Find the subject</button><span class="muted pe-cut-status"></span></div>
+        <div class="pe-field"><span>Touch up</span>${seg('tool', [['wand', '✦ Wand', 'Click an area to remove or keep it, with the colours next to it that look alike'], ['brush', '● Brush', 'Paint over parts to remove or keep them'], ['look', 'Look', 'Just look: clicking does nothing']], cut.tool)}</div>
+        <div class="pe-field"><span>Click to</span>${seg('mode', [['remove', 'Remove'], ['keep', 'Keep']], cut.mode)}</div>
+        ${cut.tool === 'wand' ? `<label class="pe-field"><span>Tolerance</span><input type="range" min="1" max="100" step="1" value="${cut.tol}" data-cut-range="tol"><output>${cut.tol}</output></label>` : ''}
+        ${cut.tool === 'brush' ? `<label class="pe-field"><span>Brush size</span><input type="range" min="4" max="200" step="1" value="${cut.size}" data-cut-range="size"><output>${cut.size} px</output></label>` : ''}
+        <label class="switch pe-toggle"><input type="checkbox" data-cut-checks ${cut.checks ? 'checked' : ''}><span>Show removed parts as checks</span></label>
+        <div class="btn-row"><button class="btn btn-sm" data-cut="undo" title="Undo the last change to the mask (Ctrl+Z)">Undo</button><button class="btn btn-sm btn-ghost" data-cut="reset" title="Keep the whole photo again">Start again</button></div>
+        <p class="hint">Hold Alt while you click or paint to do the opposite (Keep instead of Remove).</p>
+      </div>`;
+    }
+    function syncCut() {
+      const st = q('.pe-cut-status');
+      const b = q('[data-cut="auto"]');
+      if (b) b.disabled = cut.busy;
+      const u = q('[data-cut="undo"]');
+      if (u) u.disabled = !mkUndo.length;
+      if (st && !cut.busy && !st.dataset.keep) st.textContent = '';
+      cv.style.cursor = cutSel() && !before ? (cut.tool === 'wand' ? 'crosshair' : cut.tool === 'brush' ? 'none' : '') : '';
+    }
+    // Find the subject: the model runs in a helper process (main.js, src/bgworker.js).
+    let firstAuto = true;
+    async function autoCut(e) {
+      if (cut.busy) return;
+      cut.busy = true;
+      const st = q('.pe-cut-status');
+      const say = (s, keep) => {
+        const x = q('.pe-cut-status');
+        if (x) (x.textContent = s), keep ? (x.dataset.keep = '1') : delete x.dataset.keep;
+      };
+      say(firstAuto ? 'Finding the subject… the first one takes a little longer.' : 'Finding the subject…', true);
+      syncCut();
+      try {
+        const N = 1024;
+        const c = document.createElement('canvas');
+        c.width = c.height = N;
+        const g = c.getContext('2d', { willReadFrequently: true });
+        g.imageSmoothingQuality = 'high';
+        g.drawImage(a.img, 0, 0, N, N);
+        const rgba = g.getImageData(0, 0, N, N).data;
+        const t0 = performance.now();
+        const r = await ep.bg.remove(new Uint8Array(rgba.buffer));
+        if (!work.includes(e)) return; // the effect went while it worked
+        // The answer, 1024 × 1024, stretched back to the photo's shape.
+        const mc = document.createElement('canvas');
+        mc.width = mc.height = N;
+        const mg = mc.getContext('2d');
+        const img = mg.createImageData(N, N);
+        for (let i = 0, j = 0; i < r.mask.length; i++, j += 4) img.data[j] = img.data[j + 1] = img.data[j + 2] = r.mask[i], (img.data[j + 3] = 255);
+        mg.putImageData(img, 0, 0);
+        maskStep(e);
+        const kg = mk.getContext('2d');
+        kg.imageSmoothingQuality = 'high';
+        kg.drawImage(mc, 0, 0, mk.width, mk.height);
+        firstAuto = false;
+        cut.busy = false;
+        say(`Done in ${((performance.now() - t0) / 1000).toFixed(1)} s. Touch up any edges with the wand or brush.`, true);
+        maskChanged();
+      } catch (err) {
+        cut.busy = false;
+        say(`Couldn't find the subject: ${String((err && err.message) || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`, true);
+        syncCut();
+      }
+    }
+    // Where a point on the preview is on the mask (or null, outside the photo).
+    function toMask(ev) {
+      if (!view_ || !mk) return null;
+      const r = cv.getBoundingClientRect();
+      const cx = ((ev.clientX - r.left) * cv.width) / r.width, cy = ((ev.clientY - r.top) * cv.height) / r.height;
+      const { k, pad, d, dm } = view_;
+      // Preview → frame (mm) → the photo as turned (its own pixels) → the photo as it came.
+      const X = ((cx - pad) / k - d.ox) / d.s, Y = ((cy - pad) / k - d.oy) / d.s;
+      const geo = PhotoFX.geometry(d.effects);
+      const th = (-geo.rotate * Math.PI) / 180;
+      let u = X - dm.w / 2, v = Y - dm.h / 2;
+      [u, v] = [u * Math.cos(th) - v * Math.sin(th), u * Math.sin(th) + v * Math.cos(th)];
+      if (geo.flipH) u = -u;
+      if (geo.flipV) v = -v;
+      const sx = (u + a.w / 2) * MK, sy = (v + a.h / 2) * MK;
+      return { x: sx, y: sy, inside: sx >= 0 && sy >= 0 && sx < mk.width && sy < mk.height, perPx: ((r.width / cv.width) * k * d.s) / MK };
+    }
+    // The wand: the area of similar colour around a point, made removed or kept.
+    function wand(e, pt, keep) {
+      const W = mk.width, H = mk.height;
+      const x0 = Math.floor(pt.x), y0 = Math.floor(pt.y);
+      if (x0 < 0 || y0 < 0 || x0 >= W || y0 >= H) return;
+      maskStep(e);
+      const px = maskPixels();
+      const g = mk.getContext('2d', { willReadFrequently: true });
+      const md = g.getImageData(0, 0, W, H);
+      const i0 = (y0 * W + x0) * 4;
+      const r0 = px[i0], g0 = px[i0 + 1], b0 = px[i0 + 2];
+      const lim = cut.tol * 2.2;
+      const seen = new Uint8Array(W * H);
+      const stack = [y0 * W + x0];
+      seen[stack[0]] = 1;
+      const v = keep ? 255 : 0;
+      while (stack.length) {
+        const p = stack.pop();
+        const i = p * 4;
+        md.data[i] = md.data[i + 1] = md.data[i + 2] = v;
+        const x = p % W, y = (p - x) / W;
+        const look = (q2) => {
+          if (seen[q2]) return;
+          seen[q2] = 1;
+          const j = q2 * 4;
+          if (Math.max(Math.abs(px[j] - r0), Math.abs(px[j + 1] - g0), Math.abs(px[j + 2] - b0)) <= lim) stack.push(q2);
+        };
+        if (x > 0) look(p - 1);
+        if (x < W - 1) look(p + 1);
+        if (y > 0) look(p - W);
+        if (y < H - 1) look(p + W);
+      }
+      g.putImageData(md, 0, 0);
+      maskChanged();
+    }
+    // The brush: paints removed or kept along the pointer's path.
+    let stroke = null;
+    function paintTo(pt, keep) {
+      const g = mk.getContext('2d');
+      const rad = Math.max(0.5, cut.size / 2 / pt.perPx);
+      g.fillStyle = g.strokeStyle = keep ? '#fff' : '#000';
+      g.lineCap = g.lineJoin = 'round';
+      g.lineWidth = rad * 2;
+      g.beginPath();
+      if (stroke && stroke.last) {
+        g.moveTo(stroke.last.x, stroke.last.y);
+        g.lineTo(pt.x, pt.y);
+        g.stroke();
+      } else {
+        g.arc(pt.x, pt.y, rad, 0, Math.PI * 2);
+        g.fill();
+      }
+      if (stroke) stroke.last = pt;
+      maskChanged();
+    }
+    cv.addEventListener('pointerdown', (ev) => {
+      const e = cutSel();
+      if (!e || before || cut.tool === 'look' || ev.button !== 0) return;
+      maskCanvas(e);
+      const pt = toMask(ev);
+      if (!pt || !pt.inside) return;
+      const keep = (cut.mode === 'keep') !== ev.altKey;
+      if (cut.tool === 'wand') return wand(e, pt, keep);
+      maskStep(e);
+      stroke = { keep, last: null };
+      cv.setPointerCapture(ev.pointerId);
+      paintTo(pt, keep);
+    });
+    cv.addEventListener('pointermove', (ev) => {
+      if (cutSel() && cut.tool === 'brush') {
+        const r = cv.getBoundingClientRect();
+        cut.hover = [((ev.clientX - r.left) * cv.width) / r.width, ((ev.clientY - r.top) * cv.height) / r.height];
+        if (!stroke) repaint();
+      }
+      if (!stroke) return;
+      const pt = toMask(ev);
+      if (pt) paintTo(pt, stroke.keep);
+    });
+    const endStroke = () => (stroke = null);
+    cv.addEventListener('pointerup', endStroke);
+    cv.addEventListener('pointercancel', endStroke);
+    cv.addEventListener('pointerleave', () => cut.hover && ((cut.hover = null), repaint()));
+    function cutUndo(e) {
+      if (!mkUndo.length) return;
+      const g = maskCanvas(e).getContext('2d');
+      g.putImageData(mkUndo.pop(), 0, 0);
+      liveMask = mk;
+      e.p.mask = LIVE;
+      maskChanged();
+    }
+    function cutReset(e) {
+      maskStep(e);
+      const g = mk.getContext('2d');
+      g.fillStyle = '#fff';
+      g.fillRect(0, 0, mk.width, mk.height);
+      maskChanged();
+    }
+    el.addEventListener('click', (ev) => {
+      const e = cutSel();
+      if (!e) return;
+      const sb = ev.target.closest('[data-cut-seg] [data-v]');
+      if (sb) {
+        cut[sb.closest('[data-cut-seg]').dataset.cutSeg] = sb.dataset.v;
+        renderSettings();
+        syncCut();
+        return repaint();
+      }
+      const b = ev.target.closest('[data-cut]');
+      if (!b) return;
+      if (b.dataset.cut === 'auto') autoCut(e);
+      if (b.dataset.cut === 'undo') cutUndo(e);
+      if (b.dataset.cut === 'reset') cutReset(e);
+    });
+    el.addEventListener('input', (ev) => {
+      const t = ev.target;
+      if (t.dataset.cutRange) {
+        cut[t.dataset.cutRange] = Number(t.value);
+        const out = t.parentElement.querySelector('output');
+        if (out) out.textContent = t.dataset.cutRange === 'size' ? `${t.value} px` : t.value;
+      }
+      if (t.matches('[data-cut-checks]')) (cut.checks = t.checked), repaint();
+    });
+    el.addEventListener('keydown', (ev) => {
+      const e = cutSel();
+      if (e && ev.ctrlKey && !ev.altKey && ev.key.toLowerCase() === 'z' && !ev.target.matches('input[type="text"], textarea')) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        cutUndo(e);
+      }
+    });
     const fmt = (v, p) => `${Number(Number(v).toFixed(p.step && p.step < 1 ? 2 : 0))}${p.unit || ''}`;
     // The photo's tones just before this effect, behind Levels and Curves.
     function drawHistogram(e) {
       const c = q('.pe-hist') || q('.pe-curve');
       if (!c) return;
       const upTo = work.slice(0, work.indexOf(e));
-      const img = PhotoFX.render(src, upTo, { scale: Math.min(1, 300 / Math.max(src.width, src.height)), pxPerMm, color, seed, texture });
+      const img = PhotoFX.render(src, upTo, { scale: Math.min(1, 300 / Math.max(src.width, src.height)), pxPerMm, color, seed, texture, mask });
       const bins = PhotoFX.histogram(img);
       const max = Math.max(...bins.slice(2, 254)) || 1;
       const g = c.getContext('2d');
@@ -414,6 +762,8 @@ const PhotoEdit = (() => {
           const e = PhotoFX.make(type);
           work.push(e);
           selId = e.id;
+          // Remove background gets straight on with finding the subject.
+          if (type === 'cutout') setTimeout(() => autoCut(e), 0);
         }
         close();
         renderList();
@@ -440,6 +790,8 @@ const PhotoEdit = (() => {
         if (a2 === 'reset') {
           const cur = work.find((x) => x.id === selId);
           if (cur) Object.assign(cur, { ...PhotoFX.make(cur.type), id: cur.id, on: cur.on });
+          // Remove background starts again with nothing removed.
+          if (cur && cur.type === 'cutout') (mk = null), (mkUndo.length = 0), mkRev++;
           return renderSettings(), repaint();
         }
       }
@@ -507,8 +859,8 @@ const PhotoEdit = (() => {
     // Copy and paste inside the window work on the effects being edited; Done still saves them.
     function copyWork() {
       if (!work.length) return toast('Add an effect first, then copy.');
-      copyEffects(work);
-      toast(`Copied ${countText(work.length)}.`);
+      if (!copyEffects(work)) return toast("A removed background can't be copied: each photo needs its own.");
+      toast(`Copied ${countText(clip.effects.length)}${work.some((e) => e.type === 'cutout') ? ' (not the removed background: each photo needs its own)' : ''}.`);
       syncPaste();
     }
     async function pasteWork() {
@@ -529,7 +881,17 @@ const PhotoEdit = (() => {
       if (k === 'v') ev.preventDefault(), pasteWork();
     });
 
-    function finish() {
+    let finishing = false;
+    async function finish() {
+      if (finishing) return;
+      finishing = true;
+      // A mask changed here is saved as a picture of its own (kept with the design, like photos).
+      for (const e of work) {
+        if (e.type !== 'cutout' || e.p.mask !== LIVE || !mk) continue;
+        const blob = await new Promise((r) => mk.toBlob(r, 'image/png'));
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        e.p.mask = await Assets.add(doc, { name: `Mask · ${doc.assets[it.asset]?.name || 'photo'}`, mime: 'image/png', bytes });
+      }
       const effects = JSON.parse(JSON.stringify(work));
       App.change('Edit photo', () => {
         const turnedBefore = dims(it, a);
@@ -558,8 +920,10 @@ const PhotoEdit = (() => {
   }
   // Copies a photo's effects (or a list of them, from the Edit photo window).
   function copyEffects(src) {
-    const effects = Array.isArray(src) ? src : src && src.effects;
-    if (!effects || !effects.length) return App.status('This photo has no effects to copy yet.');
+    const all = Array.isArray(src) ? src : src && src.effects;
+    // A removed background belongs to its own photo (each needs its own cut-out), so it stays.
+    const effects = (all || []).filter((e) => e.type !== 'cutout');
+    if (!effects.length) return App.status(all && all.length ? "A removed background can't be copied: each photo needs its own." : 'This photo has no effects to copy yet.');
     const doc = App.S.doc;
     const colours = {};
     for (const e of effects)
@@ -573,6 +937,7 @@ const PhotoEdit = (() => {
     clip = { effects: JSON.parse(JSON.stringify(effects)), colours, textures };
     App.status(`Copied ${countText(effects.length)}. Select photos and choose Paste effects (Ctrl+Alt+V).`);
     App.render();
+    return true;
   }
   // Fresh copies of the copied effects, using colours this design has.
   function fromClip(doc) {
@@ -658,7 +1023,7 @@ const PhotoEdit = (() => {
   }
 
   return {
-    view, dims, drawFrame, frameCss, PDF_BLEND, fadeCropped, shadowMask, fadeEdges, colourOf, seedOf,
+    view, dims, drawFrame, frameCss, PDF_BLEND, fadeCropped, shadowMask, shapeOf, fadeEdges, colourOf, seedOf, maskResolver,
     open, canEdit, toggle, propsHtml, multiHtml, copyEffects, pasteEffects, hasClip, hasEffects, photosIn,
   };
 })();

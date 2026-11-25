@@ -83,6 +83,8 @@ if (pkg.version !== version) {
   fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
   console.log(`Version set to ${version}.`);
 }
+// The background-removal model is too big for git: fetch it (and check it) before building.
+run(process.execPath, [path.join(ROOT, 'tools', 'get-model.js')]);
 // The installer tool (NSIS) fails on long paths, so copy the project to a short folder and build
 // there (Couchbox's short-folder build), then bring the finished files back to dist\.
 const short = path.join(process.env.TEMP || require('os').tmpdir(), 'endpaper-build');

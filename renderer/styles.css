@@ -527,6 +527,12 @@ body.test-version .mb-test { display: inline-block; }
 .pe-field > span { color: var(--muted); font-size: 12px; }
 .pe-field input[type='range'] { width: 100%; accent-color: var(--accent); }
 .pe-field output { font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+/* Remove background: find the subject, then the wand and brush. */
+.pe-cut { border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 4px; }
+.pe-cut-auto { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 4px 0 6px; }
+.pe-cut-status { font-size: 12px; line-height: 1.4; }
+.pe-cut .pe-field .seg { grid-column: span 2; justify-self: start; }
+.pe-cut .btn-row { margin-top: 6px; }
 .pe-field select, .pe-field .pe-colour { grid-column: 2 / 4; }
 .pe-colour { display: flex; align-items: center; gap: 8px; justify-content: flex-start; }
 .pe-colour i { width: 16px; height: 16px; border-radius: 4px; border: 1px solid #fff3; }

@@ -5,3 +5,7 @@ dist/
 Thumbs.db
 # Check sheets and previews made by tools/ (not committed)
 build/*preview*
+
+# The background-removal model: fetched by tools/get-model.js (too big for git)
+models/*.onnx
+models/*.part

@@ -442,7 +442,12 @@ const Model = (() => {
   /* ---------- assets ---------- */
   function usedAssets(doc) {
     const used = new Set();
-    for (const s of allSurfaces(doc)) for (const it of surfaceItems(doc, s)) if (it.type === 'image' && it.asset) used.add(it.asset);
+    for (const s of allSurfaces(doc))
+      for (const it of surfaceItems(doc, s)) {
+        if (it.type === 'image' && it.asset) used.add(it.asset);
+        // Remove background keeps its mask as a picture too.
+        for (const e of it.effects || []) if (e.type === 'cutout' && e.p && e.p.mask) used.add(e.p.mask);
+      }
     return used;
   }
   function pruneAssets(doc) {

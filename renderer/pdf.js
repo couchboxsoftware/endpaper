@@ -90,7 +90,8 @@ const Pdf = (() => {
       }
       // A drop shadow: the frame's shape, softened, in the shadow's CMYK colour through a soft mask.
       function drawShadow(it, sh) {
-        const m = PhotoEdit.shadowMask(it, sh);
+        // With the background removed, the shadow takes the cut-out's shape.
+        const m = PhotoEdit.shadowMask(it, sh, 150, PhotoFX.hasAlpha(it.effects) ? PhotoEdit.shapeOf(doc, it, 150 / 25.4) : null);
         const col = Model.resolveColor(doc, sh.colour) || { c: 0, m: 0, y: 0, k: 100 };
         const smask = ctx.register(ctx.flateStream(m.grey, { Type: 'XObject', Subtype: 'Image', Width: m.pw, Height: m.ph, ColorSpace: 'DeviceGray', BitsPerComponent: 8 }));
         const ink = new Uint8Array([col.c, col.m, col.y, col.k].map((v) => Math.round(v * 2.55)));

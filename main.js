@@ -1,7 +1,7 @@
 /* Endpaper main process: the window, files, fonts, colour profiles, settings, brand kit,
    templates (with a bin), recovery files and What's new. The renderer does the drawing,
    the layout and the PDF; this side only touches the disk and the system. */
-const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, protocol, net, shell, screen, utilityProcess } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -318,6 +318,55 @@ app.on('window-all-closed', () => app.quit());
 
 /* ---------- IPC: app ---------- */
 const handle = (ch, fn) => ipcMain.handle(ch, (_e, ...a) => fn(...a));
+
+/* ---------- Remove background ----------
+   The model runs in a helper process of its own (src/bgworker.js): it uses several GB while it
+   works, so the helper closes after a minute and a half with nothing to do, and that memory goes
+   back to Windows. The model ships outside the app's archive (resources/models), because the
+   engine reads it straight from disk. */
+const BG_MODEL = app.isPackaged ? path.join(process.resourcesPath, 'models', 'birefnet-lite-fp16.onnx') : path.join(ROOT, 'models', 'birefnet-lite-fp16.onnx');
+const BG_IDLE_MS = 90000;
+let bgWorker = null;
+let bgIdle = null;
+let bgNext = 1;
+const bgWaiting = new Map(); // id -> { resolve, reject }
+function bgStop() {
+  clearTimeout(bgIdle);
+  if (bgWorker) bgWorker.kill();
+  bgWorker = null;
+}
+function bgStart() {
+  if (bgWorker) return bgWorker;
+  const w = utilityProcess.fork(path.join(ROOT, 'src', 'bgworker.js'), [], { serviceName: 'Endpaper background removal' });
+  w.on('message', (m) => {
+    const job = bgWaiting.get(m && m.id);
+    if (!job) return;
+    bgWaiting.delete(m.id);
+    if (m.error) job.reject(new Error(m.error));
+    else job.resolve({ mask: m.mask, ms: m.ms, device: m.device });
+  });
+  w.on('exit', () => {
+    if (bgWorker === w) bgWorker = null;
+    for (const [id, job] of bgWaiting) (job.reject(new Error('The background remover stopped unexpectedly.')), bgWaiting.delete(id));
+  });
+  bgWorker = w;
+  return w;
+}
+handle('bg:remove', async (rgba) => {
+  if (!fs.existsSync(BG_MODEL)) throw new Error('The background-removal model is missing from this copy of Endpaper.');
+  clearTimeout(bgIdle);
+  const w = bgStart();
+  const id = bgNext++;
+  try {
+    return await new Promise((resolve, reject) => {
+      bgWaiting.set(id, { resolve, reject });
+      w.postMessage({ id, rgba, model: BG_MODEL });
+    });
+  } finally {
+    if (!bgWaiting.size) bgIdle = setTimeout(bgStop, BG_IDLE_MS);
+  }
+});
+app.on('will-quit', bgStop);
 
 handle('app:info', () => {
   const version = VERSION;

@@ -28,7 +28,7 @@ Serve a folder that holds a `latest.yml` and the installer at a localhost addres
 2. Commit your changes.
 3. Run `npm run release -- 0.1.6`.
 
-This checks the changelog entry, that everything's committed, that the GitHub CLI is signed in (`gh auth login`, once) and that the version is new. Then it sets the version, copies the project to `%TEMP%\endpaper-build` and builds the installer there (the installer tool fails on long paths), and brings `Endpaper-Setup-0.1.6.exe`, its `.blockmap` and `latest.yml` back to `dist\`. Last, it commits, tags `v0.1.6`, pushes, and creates the GitHub release with those three files and the changelog entry as its notes.
+It first fetches the background-removal model if it isn't in `models` yet (see below). Then it checks the changelog entry, that everything's committed, that the GitHub CLI is signed in (`gh auth login`, once) and that the version is new. Then it sets the version, copies the project to `%TEMP%\endpaper-build` and builds the installer there (the installer tool fails on long paths), and brings `Endpaper-Setup-0.1.6.exe`, its `.blockmap` and `latest.yml` back to `dist\`. Last, it commits, tags `v0.1.6`, pushes, and creates the GitHub release with those three files and the changelog entry as its notes.
 
 `npm run release -- 0.1.6 --dry-run` does the checks and the build without committing or publishing anything. To build the installer only, run `npm run dist`.
 
@@ -58,7 +58,9 @@ This checks the changelog entry, that everything's committed, that the GitHub CL
 - `renderer/photofx.js`: the photo effects engine (light, colour, detail, shape and blending). It knows nothing about Endpaper, so it can be lifted into another app.
 - `renderer/texturegen.js`: the drawn textures for the Texture effect (paper, canvas, linen and the rest), made to repeat seamlessly, and the check for whether any picture repeats. Like `photofx.js`, it knows nothing about Endpaper.
 - `renderer/textures.js`: your own textures: the library on this computer (kept in the `textures` folder of Endpaper's settings folder), the copy each design keeps, and the texture picker in Edit photo.
-- `renderer/photoedit.js`: photo effects in Endpaper: the Edit photo window (Object, Edit photo), the effects list in Properties, and drawing a frame's effects on the page, in thumbnails and in the PDF.
+- `renderer/photoedit.js`: photo effects in Endpaper: the Edit photo window (Object, Edit photo), the effects list in Properties, and drawing a frame's effects on the page, in thumbnails and in the PDF. Also Remove background's tools there (Find the subject, the wand and the brush); its masks are kept in the design like photos.
+- `src/bgworker.js`: Remove background's helper process. It runs the model (BiRefNet lite, on the graphics card through DirectML, or the processor) for `main.js`, and closes when it's been idle for a while so its memory goes back to Windows.
+- `models/`: the background-removal model, `birefnet-lite-fp16.onnx` (114.5 MB). It's too big for git, so `tools/get-model.js` fetches it from a pinned version and checks its fingerprint; `npm run dist` and `npm run release` run that for you. The installer carries it beside the app (`resourcesmodels`).
 - `renderer/inkdesktop.js`: what opens after export, and the "Do you want to try Inkdesktop?" window, in Inkdesktop's own colours and pen nib.
 - `renderer/util.js`: shared helpers: `$`, `esc`, toasts, windows, menus.
 - `renderer/brand.js`: the logo (the open book), the magenta and the wordmark. Everything else reads it.
@@ -114,3 +116,5 @@ Then one check per feature:
 ## Licence
 
 MIT. Copyright (c) 2026 Couchbox Software. See `LICENSE`.
+
+Remove background uses BiRefNet lite by Peng Zheng et al. (MIT licence, https://github.com/ZhengPeng7/BiRefNet), through its ONNX copy at huggingface.co/onnx-community/BiRefNet_lite-ONNX, run with ONNX Runtime (Microsoft, MIT licence).

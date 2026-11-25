@@ -13,8 +13,9 @@
    (duotone, overlay, shadow) are whatever the caller uses; render() turns them into RGB with
    env.color(ref) -> [r, g, b]. Texture pictures are the caller's too: render() is given
    texture(ref, pixels, seed) -> { img, tiles } (renderer/texturegen.js draws the built-in ones).
+   Remove background's masks are the caller's too: mask(ref) -> a greyscale picture, white kept.
 
-   Settings (params) are range, select, toggle, colour, curve, texture or shuffle. One with
+   Settings (params) are range, select, toggle, colour, curve, texture, shuffle or mask. One with
    when(p) only shows while that's true (Texture's Size only when tiling, for example). */
 const PhotoFX = (() => {
   const clamp8 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v);
@@ -507,6 +508,45 @@ const PhotoFX = (() => {
       name: 'Blend mode', group: 'Shape and blending', frame: true,
       params: [{ k: 'mode', label: 'Blend', type: 'select', def: 'multiply', options: [['multiply', 'Multiply'], ['screen', 'Screen'], ['overlay', 'Overlay'], ['darken', 'Darken'], ['lighten', 'Lighten'], ['color-dodge', 'Colour dodge'], ['color-burn', 'Colour burn'], ['hard-light', 'Hard light'], ['soft-light', 'Soft light'], ['difference', 'Difference'], ['exclusion', 'Exclusion'], ['hue', 'Hue'], ['saturation', 'Saturation'], ['color', 'Colour'], ['luminosity', 'Luminosity']] }],
     },
+    // Remove background: a mask (white keeps, black removes) makes parts of the photo see-through.
+    // The mask is the caller's, from env.mask(ref) -> a picture the size of the original photo,
+    // unturned (it's turned and flipped here with the photo). No mask yet: nothing is removed.
+    cutout: {
+      name: 'Remove background', group: 'Shape and blending', alpha: true,
+      params: [
+        { k: 'mask', label: 'Mask', type: 'mask', def: null },
+        range('soften', 'Soften edge', 0, 3, 0.2, 0.05, ' mm'),
+        range('tighten', 'Tighten edge', 0, 100, 0, 1, '%'),
+      ],
+      run(d, w, h, p, env) {
+        const m = p.mask && env.mask && env.mask(p.mask);
+        if (!m) return;
+        const mc = document.createElement('canvas');
+        mc.width = w;
+        mc.height = h;
+        const g = mc.getContext('2d', { willReadFrequently: true });
+        g.imageSmoothingQuality = 'high';
+        g.fillStyle = '#000';
+        g.fillRect(0, 0, w, h);
+        const geo = env.geo || { rotate: 0, flipH: false, flipV: false };
+        const turned = geo.rotate === 90 || geo.rotate === 270;
+        const tw = turned ? h : w, th = turned ? w : h;
+        const soft = p.soften * env.pxPerMm;
+        if (soft > 0.3) g.filter = `blur(${(soft / 2).toFixed(2)}px)`;
+        g.translate(w / 2, h / 2);
+        g.rotate((geo.rotate * Math.PI) / 180);
+        g.scale(geo.flipH ? -1 : 1, geo.flipV ? -1 : 1);
+        g.drawImage(m, -tw / 2, -th / 2, tw, th);
+        const md = g.getImageData(0, 0, w, h).data;
+        // Tighten: pulls the edge in, so a halo of the old background goes.
+        const t = (p.tighten / 100) * 0.8;
+        for (let i = 0; i < d.length; i += 4) {
+          let a = md[i] / 255;
+          if (t > 0) a = Math.max(0, (a - t) / (1 - t));
+          d[i + 3] = d[i + 3] * a;
+        }
+      },
+    },
     drop_shadow: {
       name: 'Drop shadow', group: 'Shape and blending', frame: true,
       params: [range('distance', 'Distance', 0, 30, 2.5, 0.1, ' mm'), range('angle', 'Angle', 0, 359, 135, 1, '°'), range('softness', 'Softness', 0, 30, 3, 0.1, ' mm'), range('opacity', 'Strength', 0, 100, 45, 1, '%'), { k: 'colour', label: 'Colour', type: 'colour', def: { c: 0, m: 0, y: 0, k: 100 } }],
@@ -524,6 +564,8 @@ const PhotoFX = (() => {
   }
   const active = (effects) => (effects || []).filter((e) => e && e.on && TYPES[e.type]);
   const hasPixelWork = (effects) => active(effects).some((e) => !TYPES[e.type].frame);
+  // Does the picture come out with see-through parts (a removed background)?
+  const hasAlpha = (effects) => active(effects).some((e) => TYPES[e.type].alpha && e.p && e.p.mask && (e.strength ?? 100) > 0);
   // Width and height after any turn of 90° or 270°.
   function geometry(effects) {
     const g = active(effects).find((e) => e.type === 'flip_rotate');
@@ -548,7 +590,7 @@ const PhotoFX = (() => {
   // The picture with its geometric and pixel effects, at `scale` × the source's size.
   // env: { pxPerMm: source pixels per mm on the page, color(ref) -> [r, g, b], seed }
   // texture(ref, pixels, seed) -> { img, tiles } or null: where Texture effects get their pictures.
-  function render(source, effects, { scale = 1, pxPerMm = 12, color = () => [0, 0, 0], seed = 1, texture = null } = {}) {
+  function render(source, effects, { scale = 1, pxPerMm = 12, color = () => [0, 0, 0], seed = 1, texture = null, mask = null } = {}) {
     const sw = source.naturalWidth || source.width, sh = source.naturalHeight || source.height;
     const g = geometry(effects);
     const tw = Math.max(1, Math.round(sw * scale)), th = Math.max(1, Math.round(sh * scale));
@@ -567,7 +609,7 @@ const PhotoFX = (() => {
     if (!list.length) return c;
     const img = ctx.getImageData(0, 0, c.width, c.height);
     const d = img.data;
-    const env = { pxPerMm: pxPerMm * scale, color, seed, texture };
+    const env = { pxPerMm: pxPerMm * scale, color, seed, texture, mask, geo: g };
     for (const e of list) {
       const t = TYPES[e.type];
       const p = { ...Object.fromEntries(t.params.map((q) => [q.k, q.def])), ...e.p };
@@ -575,7 +617,9 @@ const PhotoFX = (() => {
       if (k <= 0) continue;
       const before = k < 1 ? new Uint8ClampedArray(d) : null;
       t.run(d, c.width, c.height, p, env);
-      if (before) for (let i = 0; i < d.length; i += 4) for (let ch = 0; ch < 3; ch++) d[i + ch] = before[i + ch] + (d[i + ch] - before[i + ch]) * k;
+      // Strength mixes the colours back (and see-through-ness, for effects that change it).
+      const chs = t.alpha ? 4 : 3;
+      if (before) for (let i = 0; i < d.length; i += 4) for (let ch = 0; ch < chs; ch++) d[i + ch] = before[i + ch] + (d[i + ch] - before[i + ch]) * k;
     }
     ctx.putImageData(img, 0, 0);
     return c;
@@ -588,6 +632,6 @@ const PhotoFX = (() => {
     return bins;
   }
 
-  return { TYPES, GROUPS, make, active, hasPixelWork, geometry, outSize, frameEffects, render, histogram, curveLut };
+  return { TYPES, GROUPS, make, active, hasPixelWork, hasAlpha, geometry, outSize, frameEffects, render, histogram, curveLut };
 })();
 if (typeof module !== 'undefined') module.exports = PhotoFX;
