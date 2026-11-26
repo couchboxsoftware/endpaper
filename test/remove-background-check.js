@@ -47,8 +47,8 @@ if (require.main === module) {
     // A click on the preview at a point of the photo (photo pixels, as it shows in the frame).
     const clickPhoto = (x, y, type = 'pointerdown', extra = '') => exec(`(() => {
       const it = ${IT}; const cv = document.querySelector('.pe-canvas'); const r = cv.getBoundingClientRect();
-      const pad = 20, k = (cv.width - 2 * pad) / it.w;
-      const cx = pad + (it.ox + ${x} * it.s) * k, cy = pad + (it.oy + ${y} * it.s) * k;
+      const v = cv._view; // where the photo is on the preview (it can be zoomed and moved)
+      const cx = v.x0 + (it.ox + ${x} * it.s) * v.k, cy = v.y0 + (it.oy + ${y} * it.s) * v.k;
       cv.dispatchEvent(new PointerEvent('${type}', { clientX: r.left + cx * r.width / cv.width, clientY: r.top + cy * r.height / cv.height, button: 0, pointerId: 1, bubbles: true ${extra} }));
     })()`);
 
@@ -96,6 +96,50 @@ if (require.main === module) {
     check('the wand keeps an area of one colour', (await alphaAt(850, 50)) === 255 && (await alphaAt(600, 300)) === 255, JSON.stringify([await alphaAt(850, 50), await alphaAt(600, 300)]));
     check('undo takes back the brush stroke', (await alphaAt(330, 300)) === 255, String(await alphaAt(330, 300)));
     check('...and Alt paints the opposite', (await alphaAt(60, 560)) === 255, String(await alphaAt(60, 560)));
+
+    // Zoom in on the edge of the disc: the wheel zooms where the pointer is, the brush paints a
+    // tiny area there, Space-drag moves around, and Ctrl+0 fits it again.
+    await openEdit();
+    await exec(`document.querySelector('.pe-list [data-fx]').click()`);
+    await wait(100);
+    const wheelAt = (x, y, dy) => exec(`(() => {
+      const it = ${IT}; const cv = document.querySelector('.pe-canvas'); const r = cv.getBoundingClientRect(); const v = cv._view;
+      const cx = v.x0 + (it.ox + ${x} * it.s) * v.k, cy = v.y0 + (it.oy + ${y} * it.s) * v.k;
+      document.querySelector('.pe-stage').dispatchEvent(new WheelEvent('wheel', { deltaY: ${dy}, clientX: r.left + cx * r.width / cv.width, clientY: r.top + cy * r.height / cv.height, bubbles: true, cancelable: true }));
+    })()`);
+    const spotBefore = await exec(`(() => { const it = ${IT}; const v = document.querySelector('.pe-canvas')._view; return [v.x0 + (it.ox + 530 * it.s) * v.k, v.y0 + (it.oy + 300 * it.s) * v.k]; })()`);
+    await wheelAt(530, 300, -900);
+    await wait(250);
+    const zoomed = await exec(`({ pct: document.querySelector('.pe-zoom-pct').textContent, k: document.querySelector('.pe-canvas')._view.k })`);
+    const spotAfter = await exec(`(() => { const it = ${IT}; const v = document.querySelector('.pe-canvas')._view; return [v.x0 + (it.ox + 530 * it.s) * v.k, v.y0 + (it.oy + 300 * it.s) * v.k]; })()`);
+    check('the wheel zooms in, and the bar shows how far', /^\d+%$/.test(zoomed.pct) && parseInt(zoomed.pct, 10) >= 300, JSON.stringify(zoomed));
+    check('...where the pointer is', Math.abs(spotAfter[0] - spotBefore[0]) < 2 && Math.abs(spotAfter[1] - spotBefore[1]) < 2, JSON.stringify({ spotBefore, spotAfter }));
+    await exec(`document.querySelector('[data-cut-seg="tool"] [data-v="brush"]').click()`);
+    await exec(`document.querySelector('[data-cut-seg="mode"] [data-v="remove"]').click()`);
+    await wait(100);
+    await clickPhoto(522, 300);
+    await clickPhoto(522, 300, 'pointerup');
+    await wait(150);
+    if (shots) await shot(path.join(shots, 'remove-bg-zoomed.png'));
+    // Space-drag moves the view, and doesn't paint.
+    const x0 = await exec(`document.querySelector('.pe-canvas')._view.x0`);
+    await exec(`(() => {
+      const ed = document.querySelector('.edit-photo'); const cv = document.querySelector('.pe-canvas'); const r = cv.getBoundingClientRect();
+      ed.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true, cancelable: true }));
+      const o = { bubbles: true, cancelable: true, button: 0, pointerId: 2 };
+      cv.dispatchEvent(new PointerEvent('pointerdown', { ...o, clientX: r.left + 200, clientY: r.top + 200 }));
+      cv.dispatchEvent(new PointerEvent('pointermove', { ...o, clientX: r.left + 320, clientY: r.top + 200 }));
+      cv.dispatchEvent(new PointerEvent('pointerup', { ...o, clientX: r.left + 320, clientY: r.top + 200 }));
+      ed.dispatchEvent(new KeyboardEvent('keyup', { code: 'Space', key: ' ', bubbles: true }));
+    })()`);
+    await wait(150);
+    check('Space-drag moves round the zoomed photo', Math.abs((await exec(`document.querySelector('.pe-canvas')._view.x0`)) - x0 - 120) < 2);
+    await exec(`document.querySelector('.edit-photo').dispatchEvent(new KeyboardEvent('keydown', { key: '0', ctrlKey: true, bubbles: true, cancelable: true }))`);
+    await wait(150);
+    check('Ctrl+0 fits it again', (await exec(`document.querySelector('.pe-zoom-pct').textContent`)) === 'Fit');
+    await done();
+    // Zoomed in, the brush took out a tiny spot: just there, nowhere near.
+    check('zoomed in, the brush removes just a tiny spot', (await alphaAt(522, 300)) === 0 && (await alphaAt(522, 312)) === 255 && (await alphaAt(510, 300)) === 255, JSON.stringify([await alphaAt(522, 300), await alphaAt(522, 312), await alphaAt(510, 300)]));
 
     // Start again keeps everything; then the brush removes the middle, for real this time.
     await openEdit();

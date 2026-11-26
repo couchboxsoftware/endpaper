@@ -513,8 +513,12 @@ body.test-version .mb-test { display: inline-block; }
 .edit-photo .modal-body { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
 .pe { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; flex: 1; min-height: 0; }
 .pe-left { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-.pe-stage { flex: 1; min-height: 0; display: grid; place-items: center; background: #101013; border-radius: 10px; overflow: hidden; }
-.pe-canvas { max-width: 100%; max-height: 100%; box-shadow: 0 6px 24px #0009; }
+.pe-stage { flex: 1; min-height: 0; position: relative; background: #101013; border-radius: 10px; overflow: hidden; }
+.pe-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* Moving round a zoomed-in photo. */
+.pe-stage.pe-panning .pe-canvas { cursor: grab !important; }
+.pe-zoom button { min-width: 30px; }
+.pe-zoom .pe-zoom-pct { min-width: 52px; font-variant-numeric: tabular-nums; }
 .pe-under { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .pe-under .btn { user-select: none; }
 .pe-note { font-size: 12px; }

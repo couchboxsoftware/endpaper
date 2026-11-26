@@ -240,16 +240,29 @@ const PhotoEdit = (() => {
     let selId = work.length ? work[work.length - 1].id : null;
     let before = false;
 
-    // A smaller copy of the photo, so the preview keeps up with the sliders.
-    const PREV = 1000;
-    const ps = Math.min(1, PREV / Math.max(a.w, a.h));
-    const src = document.createElement('canvas');
-    src.width = Math.round(a.w * ps);
-    src.height = Math.round(a.h * ps);
-    src.getContext('2d').drawImage(a.img, 0, 0, src.width, src.height);
+    // A smaller copy of the photo, so the preview keeps up with the sliders. Zoomed in, a sharper
+    // copy takes its place (in steps, up to 3072 px across), so small details stay crisp.
+    const PREV = 1000, SHARPEST = 3072;
+    let ps = 0, src = null, pxPerMm = 0;
+    function useCopy(scale) {
+      const s = Math.min(1, scale, SHARPEST / Math.max(a.w, a.h));
+      if (src && Math.abs(s - ps) < 1e-6) return false;
+      ps = s;
+      src = document.createElement('canvas');
+      src.width = Math.max(1, Math.round(a.w * ps));
+      src.height = Math.max(1, Math.round(a.h * ps));
+      const sg = src.getContext('2d');
+      sg.imageSmoothingQuality = 'high';
+      sg.drawImage(a.img, 0, 0, src.width, src.height);
+      pxPerMm = (it.s ? 1 / it.s : 12) * ps; // preview pixels per mm on the page
+      lastKey = '';
+      return true;
+    }
+    const baseScale = Math.min(1, PREV / Math.max(a.w, a.h));
+    let lastKey = '';
+    useCopy(baseScale);
     const color = colourOf(doc);
     const seed = seedOf(it);
-    const pxPerMm = (it.s ? 1 / it.s : 12) * ps; // preview pixels per mm on the page
     const texture = Textures.resolver(doc, { onLoaded: () => ((lastKey = ''), repaint()) });
     const mask = maskResolver(doc);
 
@@ -300,7 +313,9 @@ const PhotoEdit = (() => {
       body: `<div class="pe">
         <div class="pe-left">
           <div class="pe-stage"><canvas class="pe-canvas"></canvas></div>
-          <div class="pe-under"><button class="btn btn-sm" data-pe="before" title="Hold to see the photo without its effects">Before / After</button><span class="muted pe-note">Hold to compare with the photo as it was.</span></div>
+          <div class="pe-under"><button class="btn btn-sm" data-pe="before" title="Hold to see the photo without its effects">Before / After</button>
+            <div class="seg pe-zoom"><button data-zoom="out" title="Zoom out (Ctrl+−)">−</button><button data-zoom="fit" class="pe-zoom-pct" title="Fit the photo in view (Ctrl+0)">Fit</button><button data-zoom="in" title="Zoom in (Ctrl+=)">+</button></div>
+            <span class="muted pe-note">Scroll to zoom. Hold Space and drag (or drag with the middle button) to move around.</span></div>
         </div>
         <div class="pe-right">
           <div class="pe-head"><h5>Effects</h5><div class="pe-head-btns"><button class="btn btn-sm btn-ghost" data-pe="copy" title="Copy these effects, to paste onto another photo (Ctrl+Alt+C)">Copy</button><button class="btn btn-sm btn-ghost" data-pe="paste" title="Paste effects you copied (Ctrl+Alt+V)">Paste</button><button class="btn btn-sm" data-pe="add">+ Add</button></div></div>
@@ -316,7 +331,7 @@ const PhotoEdit = (() => {
     const cv = q('.pe-canvas');
 
     /* ----- the preview ----- */
-    let lastKey = '', lastImg = null, raf = 0;
+    let lastImg = null, raf = 0;
     function draft() {
       const d = { ...it, effects: before ? [] : work };
       // A turn of 90° changes the photo's shape: refit it in the frame, as Done will.
@@ -324,35 +339,63 @@ const PhotoEdit = (() => {
       if (dmOld.w !== dmNew.w || dmOld.h !== dmNew.h) Render.fitImage(d, a, it.fit === 'fit' ? 'fit' : 'fill');
       return d;
     }
+    /* Zoom: 1 is Fit; zv.x, zv.y are where the frame's top-left sits on the preview when zoomed
+       (null: centred). Scroll to zoom where the pointer is; Space-drag or middle-drag to move. */
+    const ZMAX = 16;
+    const zv = { z: 1, x: null, y: null };
     function paint() {
       raf = 0;
       const d = draft();
       const stage = q('.pe-stage');
-      const SW = stage.clientWidth - 40, SH = stage.clientHeight - 40;
-      const k = Math.min(SW / it.w, SH / it.h);
+      const SW = Math.max(50, stage.clientWidth), SH = Math.max(50, stage.clientHeight);
+      if (cv.width !== SW || cv.height !== SH) (cv.width = SW), (cv.height = SH);
       const pad = 20;
-      cv.width = Math.round(it.w * k + 2 * pad);
-      cv.height = Math.round(it.h * k + 2 * pad);
+      const kFit = Math.min((SW - 2 * pad) / it.w, (SH - 2 * pad) / it.h);
+      const k = kFit * zv.z;
+      const W = it.w * k, H = it.h * k;
+      if (zv.x == null || zv.z <= 1) (zv.x = (SW - W) / 2), (zv.y = (SH - H) / 2);
+      // Never let the photo slide right out of view.
+      zv.x = Math.min(SW - 40, Math.max(40 - W, zv.x));
+      zv.y = Math.min(SH - 40, Math.max(40 - H, zv.y));
+      const x0 = zv.x, y0 = zv.y;
+      // Sharp enough for this zoom: one copy pixel to a screen pixel, in steps.
+      const want = Math.max(baseScale, Math.pow(2, Math.ceil(Math.log2(Math.max(1e-6, k * (it.s || 1 / 12))))));
+      useCopy(zv.z <= 1 ? baseScale : want);
       const g = cv.getContext('2d');
-      g.fillStyle = '#fff'; // the page under the photo, so blend modes and shadows show as printed
-      g.fillRect(0, 0, cv.width, cv.height);
+      g.fillStyle = '#101013';
+      g.fillRect(0, 0, SW, SH);
+      // The page under the photo (and a little round it), so blend modes and shadows show as printed.
+      const pm = pad * zv.z;
+      g.fillStyle = '#fff';
+      g.fillRect(x0 - pm, y0 - pm, W + 2 * pm, H + 2 * pm);
       // Working on Remove background: show what's removed as checks, if asked.
       const cutting = cutSel();
       if (cutting && cut.checks && !before) {
         g.fillStyle = checks(g);
-        g.fillRect(pad, pad, it.w * k, it.h * k);
+        g.fillRect(x0, y0, W, H);
       }
-      const key = JSON.stringify(PhotoFX.active(d.effects).filter((e) => !PhotoFX.TYPES[e.type].frame)) + '|' + mkRev;
+      const key = JSON.stringify(PhotoFX.active(d.effects).filter((e) => !PhotoFX.TYPES[e.type].frame)) + '|' + mkRev + '|' + ps;
       if (key !== lastKey) {
         lastImg = PhotoFX.render(src, d.effects, { scale: 1, pxPerMm, color, seed, texture, mask });
         lastKey = key;
       }
       const dm = dims(d, a);
       g.save();
-      g.translate(pad, pad);
-      drawFrame(g, doc, d, k, { img: lastImg, w: dm.w, h: dm.h });
+      g.translate(x0, y0);
+      if (zv.z <= 1.5) drawFrame(g, doc, d, k, { img: lastImg, w: dm.w, h: dm.h });
+      else {
+        // Zoomed in: just the photo in its frame, drawn straight (the frame's shadow, fade and
+        // blend show again at Fit), so it stays quick however close you are.
+        g.beginPath();
+        g.rect(0, 0, W, H);
+        g.clip();
+        g.imageSmoothingQuality = zv.z > 6 ? 'low' : 'high';
+        g.drawImage(lastImg, d.ox * k, d.oy * k, dm.w * d.s * k, dm.h * d.s * k);
+      }
       g.restore();
-      view_ = { k, pad, d, dm };
+      view_ = { k, x0, y0, d, dm };
+      cv._view = view_; // for the checks in test/
+      syncZoom();
       // The brush's size, where the pointer is.
       if (cutting && cut.tool === 'brush' && cut.hover) {
         const r = (cut.size / 2) * (cv.width / cv.getBoundingClientRect().width);
@@ -381,6 +424,75 @@ const PhotoEdit = (() => {
       return (checkPat = g.createPattern(c, 'repeat'));
     }
     const repaint = () => raf || (raf = requestAnimationFrame(paint));
+
+    // Zooming: the wheel (where the pointer is), the zoom bar and Ctrl+= / Ctrl+− / Ctrl+0.
+    function zoomTo(z, at) {
+      const nz = Math.min(ZMAX, Math.max(1, z));
+      if (!view_ || nz === zv.z) return;
+      const r = cv.getBoundingClientRect();
+      const px = at ? ((at.clientX - r.left) * cv.width) / r.width : cv.width / 2;
+      const py = at ? ((at.clientY - r.top) * cv.height) / r.height : cv.height / 2;
+      // The spot under the pointer stays under it.
+      const mx = (px - view_.x0) / view_.k, my = (py - view_.y0) / view_.k;
+      const k2 = (view_.k / zv.z) * nz;
+      zv.z = nz;
+      zv.x = px - mx * k2;
+      zv.y = py - my * k2;
+      repaint();
+    }
+    function syncZoom() {
+      const p = q('.pe-zoom-pct');
+      if (p) p.textContent = zv.z <= 1 ? 'Fit' : Math.round(zv.z * 100) + '%';
+      const n = q('.pe-note');
+      if (n) n.textContent = zv.z > 1.5 ? "Zoomed in: the frame's shadow, fade and blend show again at Fit." : 'Scroll to zoom. Hold Space and drag (or drag with the middle button) to move around.';
+      const st = q('.pe-stage');
+      if (st) st.classList.toggle('pe-panning', !!panning || spaceHeld);
+    }
+    q('.pe-stage').addEventListener('wheel', (ev) => {
+      ev.preventDefault();
+      zoomTo(zv.z * Math.pow(1.0015, -ev.deltaY), ev);
+    }, { passive: false });
+    el.addEventListener('click', (ev) => {
+      const b = ev.target.closest('[data-zoom]');
+      if (!b) return;
+      if (b.dataset.zoom === 'in') zoomTo(zv.z * 1.5);
+      else if (b.dataset.zoom === 'out') zoomTo(zv.z / 1.5);
+      else zoomTo(1);
+    });
+    // Moving around: Space held (or the middle button) and drag.
+    let spaceHeld = false, panning = null;
+    const typingIn = (t) => t && t.matches && t.matches('input[type="text"], input[type="number"], textarea, select');
+    el.addEventListener('keydown', (ev) => {
+      if (ev.code === 'Space' && !typingIn(ev.target)) {
+        ev.preventDefault(); // not a click on whichever button has focus
+        if (!spaceHeld) (spaceHeld = true), syncZoom();
+      }
+      if (ev.ctrlKey && !ev.altKey && !typingIn(ev.target)) {
+        if (ev.key === '=' || ev.key === '+') ev.preventDefault(), zoomTo(zv.z * 1.5);
+        if (ev.key === '-') ev.preventDefault(), zoomTo(zv.z / 1.5);
+        if (ev.key === '0') ev.preventDefault(), zoomTo(1);
+      }
+    });
+    el.addEventListener('keyup', (ev) => ev.code === 'Space' && ((spaceHeld = false), syncZoom()));
+    cv.addEventListener('pointerdown', (ev) => {
+      if (!(ev.button === 1 || (ev.button === 0 && spaceHeld)) || zv.z <= 1) return;
+      ev.preventDefault();
+      ev.stopImmediatePropagation(); // not a brush stroke or wand click
+      panning = { x: ev.clientX, y: ev.clientY, zx: zv.x, zy: zv.y };
+      cv.setPointerCapture(ev.pointerId);
+      syncZoom();
+    });
+    cv.addEventListener('pointermove', (ev) => {
+      if (!panning) return;
+      const r = cv.getBoundingClientRect();
+      zv.x = panning.zx + ((ev.clientX - panning.x) * cv.width) / r.width;
+      zv.y = panning.zy + ((ev.clientY - panning.y) * cv.height) / r.height;
+      repaint();
+    });
+    const endPan = () => panning && ((panning = null), syncZoom());
+    cv.addEventListener('pointerup', endPan);
+    cv.addEventListener('pointercancel', endPan);
+    new ResizeObserver(() => repaint()).observe(q('.pe-stage'));
 
     /* ----- the list of effects ----- */
     const T = PhotoFX.TYPES;
@@ -517,9 +629,9 @@ const PhotoEdit = (() => {
       if (!view_ || !mk) return null;
       const r = cv.getBoundingClientRect();
       const cx = ((ev.clientX - r.left) * cv.width) / r.width, cy = ((ev.clientY - r.top) * cv.height) / r.height;
-      const { k, pad, d, dm } = view_;
+      const { k, x0, y0, d, dm } = view_;
       // Preview → frame (mm) → the photo as turned (its own pixels) → the photo as it came.
-      const X = ((cx - pad) / k - d.ox) / d.s, Y = ((cy - pad) / k - d.oy) / d.s;
+      const X = ((cx - x0) / k - d.ox) / d.s, Y = ((cy - y0) / k - d.oy) / d.s;
       const geo = PhotoFX.geometry(d.effects);
       const th = (-geo.rotate * Math.PI) / 180;
       let u = X - dm.w / 2, v = Y - dm.h / 2;
@@ -586,7 +698,7 @@ const PhotoEdit = (() => {
     }
     cv.addEventListener('pointerdown', (ev) => {
       const e = cutSel();
-      if (!e || before || cut.tool === 'look' || ev.button !== 0) return;
+      if (!e || before || cut.tool === 'look' || ev.button !== 0 || spaceHeld) return;
       maskCanvas(e);
       const pt = toMask(ev);
       if (!pt || !pt.inside) return;

@@ -19,6 +19,16 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.21 · 26 Nov 2026
+Zoom right in while you edit a photo, to touch up the smallest bits.
+
+### New
+- Edit photo zooms in up to 1,600%: scroll the mouse wheel to zoom where the pointer is, or use −, + and Fit under the photo (also Ctrl+=, Ctrl+− and Ctrl+0).
+- Hold Space and drag, or drag with the middle mouse button, to move around a zoomed-in photo.
+
+### Improved
+- The photo stays sharp as you zoom in, and the Remove background brush stays the same size on screen, so it reaches much smaller bits.
+
 ## 0.1.20 · 25 Nov 2026
 Group things to move and scale them together, and photos resize the way you'd expect.
 
