@@ -168,6 +168,42 @@ if (require.main === module) {
     for (let x = 290; x <= 380; x += 6) edge.push(await alphaAt(x, 300));
     check('Soften edge softens the edge', soft && edge.some((v) => v > 10 && v < 245), JSON.stringify({ a1, edge }));
 
+    // Blur on a cut-out: the outline blurs too, with no halo of the old grey background, even with
+    // Blur listed before Remove background (which always comes first). On an ordinary photo, the
+    // edges stay crisp unless "Blur the edges too" is ticked.
+    const blurred = await exec(`(async () => {
+      const d = App.S.doc;
+      const mc = document.createElement('canvas'); mc.width = 900; mc.height = 600; const mg = mc.getContext('2d');
+      mg.fillStyle = '#000'; mg.fillRect(0, 0, 900, 600); mg.fillStyle = '#fff'; mg.beginPath(); mg.arc(330, 300, 200, 0, 7); mg.fill();
+      const bytes = new Uint8Array(await (await new Promise((r) => mc.toBlob(r, 'image/png'))).arrayBuffer());
+      const maskId = await Assets.add(d, { name: 'disc mask.png', mime: 'image/png', bytes });
+      const photo = Model.findItem(d, window.__id).item;
+      const fresh = { ...JSON.parse(JSON.stringify(photo)), id: 'bt' };
+      const cut = { ...PhotoFX.make('cutout') }; cut.p.mask = maskId; cut.p.soften = 0;
+      const bl = PhotoFX.make('blur'); bl.p.radius = 3;
+      fresh.effects = [bl, cut]; // Blur first in the list on purpose
+      const px = (it) => { const v = PhotoEdit.view(d, it, { scale: 1 }); const c = document.createElement('canvas'); c.width = v.img.width; c.height = v.img.height; const g = c.getContext('2d'); g.drawImage(v.img, 0, 0); return g.getImageData(0, 0, c.width, c.height).data; };
+      const D = px(fresh);
+      const at = (x, y) => Array.from(D.slice((y * 900 + x) * 4, (y * 900 + x) * 4 + 4));
+      // Along the disc's right edge: a soft ramp, and every part of it still red, not grey.
+      const ramp = [];
+      for (let x = 500; x <= 560; x += 3) ramp.push(at(x, 300));
+      const soft = ramp.filter((p) => p[3] > 15 && p[3] < 240);
+      const halo = soft.some((p) => p[0] < p[1] + 60);
+      // An ordinary photo: crisp edges, or blurred away with the tick box.
+      const plain = { ...fresh, id: 'bp', effects: [{ ...bl, p: { ...bl.p } }] };
+      const P1 = px(plain);
+      plain.effects[0].p.edges = true;
+      const P2 = px(plain);
+      return { soft: soft.length, halo, ramp: ramp.map((p) => p[3]), cornerOff: P1[3], cornerOn: P2[3], midOn: P2[(300 * 900 + 450) * 4 + 3], pngOn: PhotoFX.hasAlpha(plain.effects) };
+    })()`);
+    check('Blur softens a cut-out’s outline, even listed before Remove background', blurred.soft >= 3, JSON.stringify(blurred));
+    check('...without a halo of the old background', !blurred.halo, JSON.stringify(blurred));
+    check('an ordinary photo stays crisp to its edges', blurred.cornerOff === 255, JSON.stringify(blurred));
+    check('...unless Blur the edges too is ticked: then they blur away, and the middle stays solid', blurred.cornerOn < 100 && blurred.midOn === 255 && blurred.pngOn, JSON.stringify(blurred));
+    const order = await exec(`(() => { const d = { effects: [PhotoFX.make('blur'), PhotoFX.make('cutout')] }; return PhotoFX.inOrder(d.effects).map((e) => e.type); })()`);
+    check('Remove background always comes first', order[0] === 'cutout', JSON.stringify(order));
+
     // The drop shadow takes the cut-out's shape, in the PDF too.
     const shadow = await exec(`(() => {
       const d = App.S.doc, it = ${IT};

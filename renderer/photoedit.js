@@ -497,6 +497,7 @@ const PhotoEdit = (() => {
     /* ----- the list of effects ----- */
     const T = PhotoFX.TYPES;
     function renderList() {
+      work = PhotoFX.inOrder(work); // Remove background stays at the bottom: it's applied first
       const rows = [...work].reverse(); // top of the list is applied last
       q('.pe-list').innerHTML = rows.length
         ? rows.map((e) => `<div class="pe-row${e.id === selId ? ' on' : ''}${e.on ? '' : ' off'}" data-fx="${e.id}" draggable="true">
@@ -518,6 +519,8 @@ const PhotoEdit = (() => {
         ${t.histogram && e.type !== 'curves' ? '<canvas class="pe-hist" width="256" height="70"></canvas>' : ''}
         ${fields}${strength}
         ${t.geometric ? '<p class="hint">Flip and rotate always happens first, before the other effects.</p>' : ''}
+        ${t.first ? '<p class="hint">Remove background always happens first (it stays at the bottom of the list), so Blur and the other effects work on the cut-out.</p>' : ''}
+        ${e.type === 'blur' ? '<p class="hint">A cut-out\'s outline blurs too. Tick Blur the edges too to soften the photo\'s outside edges into the page.</p>' : ''}
         ${t.frame ? '<p class="hint">Works on the frame on the page, so it shows on what\'s behind the photo too.</p>' : ''}`;
       if (t.histogram || e.type === 'curves') drawHistogram(e);
       const curve = box.querySelector('.pe-curve');

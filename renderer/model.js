@@ -540,6 +540,12 @@ const Model = (() => {
         }
       doc.ownTextSettings = true;
     }
+    // Remove background always comes first in a photo's effects (from 0.1.22), so the others
+    // (Blur, Texture…) work on the cut-out. Older files are put in that order.
+    for (const s of allSurfaces(doc))
+      for (const it of surfaceItems(doc, s))
+        if (it.effects && it.effects.some((e, i) => e.type === 'cutout' && i > 0))
+          it.effects = [...it.effects.filter((e) => e.type === 'cutout'), ...it.effects.filter((e) => e.type !== 'cutout')];
     return doc;
   }
 

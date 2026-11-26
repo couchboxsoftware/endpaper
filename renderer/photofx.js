@@ -4,6 +4,7 @@
    An effect is { id, type, on, strength (0-100), p: { ...settings } }. They apply in list order.
    Three kinds:
      - geometric (flip and rotate): always applied first, and can swap width and height
+       (Remove background comes straight after it, before everything else)
      - pixel: change the picture's colours and detail (most of them)
      - frame: act on the frame the photo sits in (fade edges, blend mode, drop shadow); the engine
        only reports them (frameEffects) and the page drawing applies them
@@ -69,20 +70,41 @@ const PhotoFX = (() => {
   const toLin = (v) => ((v /= 255) <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
   const toSrgb = (v) => 255 * (v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055);
 
-  // Gaussian-like blur: three box blurs, each across then down. In place, RGB only.
-  function blur(d, w, h, radius) {
+  // Gaussian-like blur: three box blurs, each across then down. In place. See-through-ness blurs
+  // too, and colours are weighted by it, so a cut-out's outline goes soft without the hidden
+  // background's colours bleeding in. edges: what's past the picture's edge counts as see-through,
+  // so the edges blur away; otherwise the edge pixels carry on outwards and the edges stay crisp.
+  function blur(d, w, h, radius, { edges = false } = {}) {
     const sigma = Math.max(0, radius);
     if (sigma < 0.4) return;
     const boxes = boxSizes(sigma, 3);
-    const tmp = new Float32Array(w * h * 3);
-    const src = new Float32Array(w * h * 3);
-    for (let i = 0, j = 0; i < d.length; i += 4, j += 3) (src[j] = d[i]), (src[j + 1] = d[i + 1]), (src[j + 2] = d[i + 2]);
+    const n = w * h * 4;
+    const tmp = new Float32Array(n);
+    const src = new Float32Array(n);
+    for (let i = 0; i < n; i += 4) {
+      const a = d[i + 3] / 255;
+      src[i] = d[i] * a;
+      src[i + 1] = d[i + 1] * a;
+      src[i + 2] = d[i + 2] * a;
+      src[i + 3] = d[i + 3];
+    }
     for (const b of boxes) {
       const r = (b - 1) / 2;
-      boxH(src, tmp, w, h, r);
-      boxV(tmp, src, w, h, r);
+      boxH(src, tmp, w, h, r, edges);
+      boxV(tmp, src, w, h, r, edges);
     }
-    for (let i = 0, j = 0; i < d.length; i += 4, j += 3) (d[i] = src[j]), (d[i + 1] = src[j + 1]), (d[i + 2] = src[j + 2]);
+    for (let i = 0; i < n; i += 4) {
+      const A = src[i + 3];
+      if (A < 0.5) {
+        d[i + 3] = 0;
+        continue;
+      }
+      const k = 255 / A;
+      d[i] = src[i] * k;
+      d[i + 1] = src[i + 1] * k;
+      d[i + 2] = src[i + 2] * k;
+      d[i + 3] = A;
+    }
   }
   function boxSizes(sigma, n) {
     const wIdeal = Math.sqrt((12 * sigma * sigma) / n + 1);
@@ -92,32 +114,37 @@ const PhotoFX = (() => {
     const m = Math.round((12 * sigma * sigma - n * wl * wl - 4 * n * wl - 3 * n) / (-4 * wl - 4));
     return Array.from({ length: n }, (_, i) => (i < m ? wl : wu));
   }
-  function boxH(s, t, w, h, r) {
+  // One box blur across (boxH) or down (boxV), on RGBA floats. zero: past the edge is nothing
+  // (see-through); otherwise the edge pixel repeats.
+  function boxH(s, t, w, h, r, zero) {
     const iarr = 1 / (r + r + 1);
     for (let y = 0; y < h; y++) {
-      for (let c = 0; c < 3; c++) {
-        const row = y * w * 3 + c;
-        const fv = s[row];
-        let val = (r + 1) * fv;
-        for (let j = 0; j < r; j++) val += s[row + Math.min(j, w - 1) * 3];
+      for (let c = 0; c < 4; c++) {
+        const row = y * w * 4 + c;
+        const first = zero ? 0 : s[row], last = zero ? 0 : s[row + (w - 1) * 4];
+        let val = 0;
+        for (let j = -r - 1; j < r; j++) val += j < 0 ? first : j >= w ? last : s[row + j * 4];
         for (let x = 0; x < w; x++) {
-          val += s[row + Math.min(x + r, w - 1) * 3] - (x - r - 1 >= 0 ? s[row + (x - r - 1) * 3] : fv);
-          t[row + x * 3] = val * iarr;
+          const xa = x + r, xb = x - r - 1;
+          val += (xa < w ? s[row + xa * 4] : last) - (xb >= 0 ? s[row + xb * 4] : first);
+          t[row + x * 4] = val * iarr;
         }
       }
     }
   }
-  function boxV(s, t, w, h, r) {
+  function boxV(s, t, w, h, r, zero) {
     const iarr = 1 / (r + r + 1);
+    const stride = w * 4;
     for (let x = 0; x < w; x++) {
-      for (let c = 0; c < 3; c++) {
-        const col = x * 3 + c;
-        const fv = s[col];
-        let val = (r + 1) * fv;
-        for (let j = 0; j < r; j++) val += s[col + Math.min(j, h - 1) * w * 3];
+      for (let c = 0; c < 4; c++) {
+        const col = x * 4 + c;
+        const first = zero ? 0 : s[col], last = zero ? 0 : s[col + (h - 1) * stride];
+        let val = 0;
+        for (let j = -r - 1; j < r; j++) val += j < 0 ? first : j >= h ? last : s[col + j * stride];
         for (let y = 0; y < h; y++) {
-          val += s[col + Math.min(y + r, h - 1) * w * 3] - (y - r - 1 >= 0 ? s[col + (y - r - 1) * w * 3] : fv);
-          t[col + y * w * 3] = val * iarr;
+          const ya = y + r, yb = y - r - 1;
+          val += (ya < h ? s[col + ya * stride] : last) - (yb >= 0 ? s[col + yb * stride] : first);
+          t[col + y * stride] = val * iarr;
         }
       }
     }
@@ -296,18 +323,22 @@ const PhotoFX = (() => {
         const orig = new Uint8ClampedArray(d);
         blur(d, w, h, p.radius * env.pxPerMm);
         const a = p.amount / 100;
-        for (let i = 0; i < d.length; i += 4)
+        for (let i = 0; i < d.length; i += 4) {
           for (let c = 0; c < 3; c++) {
             const diff = orig[i + c] - d[i + c];
             d[i + c] = Math.abs(diff) < p.threshold ? orig[i + c] : clamp8(orig[i + c] + diff * a);
           }
+          d[i + 3] = orig[i + 3]; // sharpening doesn't change what's see-through
+        }
       },
     },
+    // A cut-out's outline blurs too. "Blur the edges too" lets the photo's outside edges blur
+    // away into the page as well.
     blur: {
-      name: 'Blur', group: 'Detail and look',
-      params: [range('radius', 'Radius', 0.1, 20, 1.5, 0.1, ' mm')],
+      name: 'Blur', group: 'Detail and look', alpha: true, makesAlpha: (p) => !!p.edges,
+      params: [range('radius', 'Radius', 0.1, 20, 1.5, 0.1, ' mm'), { k: 'edges', label: 'Blur the edges too', type: 'toggle', def: false }],
       run(d, w, h, p, env) {
-        blur(d, w, h, p.radius * env.pxPerMm);
+        blur(d, w, h, p.radius * env.pxPerMm, { edges: !!p.edges });
       },
     },
     noise_reduction: {
@@ -322,6 +353,7 @@ const PhotoFX = (() => {
           const diff = (Math.abs(orig[i] - d[i]) + Math.abs(orig[i + 1] - d[i + 1]) + Math.abs(orig[i + 2] - d[i + 2])) / 3;
           const k = a * Math.max(0, 1 - diff / 28);
           for (let c = 0; c < 3; c++) d[i + c] = orig[i + c] + (d[i + c] - orig[i + c]) * k;
+          d[i + 3] = orig[i + 3]; // smoothing doesn't change what's see-through
         }
       },
     },
@@ -512,7 +544,7 @@ const PhotoFX = (() => {
     // The mask is the caller's, from env.mask(ref) -> a picture the size of the original photo,
     // unturned (it's turned and flipped here with the photo). No mask yet: nothing is removed.
     cutout: {
-      name: 'Remove background', group: 'Shape and blending', alpha: true,
+      name: 'Remove background', group: 'Shape and blending', alpha: true, first: true, makesAlpha: (p) => !!p.mask,
       params: [
         { k: 'mask', label: 'Mask', type: 'mask', def: null },
         range('soften', 'Soften edge', 0, 3, 0.2, 0.05, ' mm'),
@@ -565,7 +597,10 @@ const PhotoFX = (() => {
   const active = (effects) => (effects || []).filter((e) => e && e.on && TYPES[e.type]);
   const hasPixelWork = (effects) => active(effects).some((e) => !TYPES[e.type].frame);
   // Does the picture come out with see-through parts (a removed background)?
-  const hasAlpha = (effects) => active(effects).some((e) => TYPES[e.type].alpha && e.p && e.p.mask && (e.strength ?? 100) > 0);
+  const hasAlpha = (effects) => active(effects).some((e) => TYPES[e.type].makesAlpha && TYPES[e.type].makesAlpha({ ...e.p }) && (e.strength ?? 100) > 0);
+  // Remove background always comes first (after flip and rotate), so the other effects work on the
+  // cut-out: Blur softens its outline, whatever order the list is in.
+  const inOrder = (effects) => [...(effects || [])].sort((a, b) => (TYPES[b.type]?.first ? 1 : 0) - (TYPES[a.type]?.first ? 1 : 0));
   // Width and height after any turn of 90° or 270°.
   function geometry(effects) {
     const g = active(effects).find((e) => e.type === 'flip_rotate');
@@ -605,7 +640,7 @@ const PhotoFX = (() => {
     ctx.scale(g.flipH ? -1 : 1, g.flipV ? -1 : 1);
     ctx.drawImage(source, -tw / 2, -th / 2, tw, th);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    const list = active(effects).filter((e) => !TYPES[e.type].frame && !TYPES[e.type].geometric);
+    const list = inOrder(active(effects)).filter((e) => !TYPES[e.type].frame && !TYPES[e.type].geometric);
     if (!list.length) return c;
     const img = ctx.getImageData(0, 0, c.width, c.height);
     const d = img.data;
@@ -632,6 +667,6 @@ const PhotoFX = (() => {
     return bins;
   }
 
-  return { TYPES, GROUPS, make, active, hasPixelWork, hasAlpha, geometry, outSize, frameEffects, render, histogram, curveLut };
+  return { TYPES, GROUPS, make, active, hasPixelWork, hasAlpha, inOrder, geometry, outSize, frameEffects, render, histogram, curveLut };
 })();
 if (typeof module !== 'undefined') module.exports = PhotoFX;

@@ -19,6 +19,19 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.22 · 26 Nov 2026
+Blur softens a cut-out's outline, and can blur a photo's edges too.
+
+### New
+- Blur the edges too, in the Blur effect (Edit photo), blurs a photo's outside edges away into the page. It's off to start, so photos stay crisp to their edges.
+
+### Improved
+- Remove background always happens first, at the bottom of the effects list, so Blur, Texture and the other effects work on the cut-out.
+
+### Fixed
+- Blur softens a cut-out's outline too, not just the inside of the photo, with no halo of the old background.
+- Sharpen and Noise reduction no longer leave a fringe round a cut-out.
+
 ## 0.1.21 · 26 Nov 2026
 Zoom right in while you edit a photo, to touch up the smallest bits.
 
