@@ -70,6 +70,14 @@ const Preflight = (() => {
           if (bad.length) add('warn', `${name} stops at the ${bad.join(' and ')} edge. Stretch it ${sz.bleed} mm past the edge into the bleed.`, s, it);
         }
       }
+      // Text that will print as a picture, because of picture effects on it or its group
+      // (renderer/itemfx.js). It stays editable in Endpaper.
+      for (const e of ItemFX.entities(doc, items)) {
+        if (!ItemFX.rastersText(e)) continue;
+        const fx = ItemFX.pictureEffects(e.effects).map((x) => PhotoFX.TYPES[x.type].name).join(', ');
+        const what = e.kind === 'group' ? `The text in the group “${e.name}”` : `“${e.name}”`;
+        add('warn', `${what} will print as a picture (600 ppi), because of ${fx}. It's still text in Endpaper.`, s, e.items.find((x) => x.type === 'text') || e.items[0]);
+      }
     }
     if (doc.facing && doc.pages.length % 2) add('info', `The book has ${doc.pages.length} pages. Printers need an even number, so a blank page will be added at the end.`, { kind: 'page', idx: doc.pages.length - 1 });
     if (doc.cover.enabled) {

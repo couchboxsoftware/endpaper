@@ -111,6 +111,35 @@ const PhotoEdit = (() => {
     if (fx.blend) ctx.globalCompositeOperation = BLEND[fx.blend] || 'source-over';
     ctx.drawImage(c, 0, 0, W, H);
     ctx.restore();
+    // Outline: round the frame, or the cut-out's shape, on top.
+    if (fx.outline) {
+      const ol = outlineLayer(c, fx.outline, c.width / it.w, Color.rgb(Model.resolveColor(doc, fx.outline.colour) || { c: 0, m: 0, y: 0, k: 100 }));
+      ctx.drawImage(ol.canvas, -ol.pad, -ol.pad, ol.canvas.width, ol.canvas.height);
+    }
+  }
+  // Just the outline round a shape: src's see-through-ness is the shape, ppmm its pixels per mm,
+  // rgb the line's colour. Returns a canvas pad pixels bigger than src on every side (the line
+  // can reach past the shape), drawn so src's top-left sits at (pad, pad).
+  function outlineLayer(src, o, ppmm, rgb) {
+    const pad = Math.ceil(PhotoFX.outlineReach(o) * ppmm) + 2;
+    const w = src.width + 2 * pad, h = src.height + 2 * pad;
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(src, pad, pad);
+    const d = g.getImageData(0, 0, w, h);
+    const a = new Uint8Array(w * h);
+    for (let i = 0; i < a.length; i++) a[i] = d.data[i * 4 + 3];
+    const cov = PhotoFX.outlineMask(a, w, h, o, ppmm);
+    for (let i = 0; i < cov.length; i++) {
+      d.data[i * 4] = rgb[0];
+      d.data[i * 4 + 1] = rgb[1];
+      d.data[i * 4 + 2] = rgb[2];
+      d.data[i * 4 + 3] = cov[i];
+    }
+    g.putImageData(d, 0, 0);
+    return { canvas: c, pad, cov, w, h };
   }
   // Softens the canvas's edges to transparent over `f` pixels.
   function fadeEdges(g, w, h, f) {
@@ -228,7 +257,7 @@ const PhotoEdit = (() => {
 
   /* ---------- the Edit photo window ---------- */
   // A frame can have one of each of these (the frame effects, and flip and rotate).
-  const ONCE = new Set(['flip_rotate', 'fade_edges', 'blend_mode', 'drop_shadow', 'cutout']);
+  const ONCE = new Set(['flip_rotate', 'fade_edges', 'blend_mode', 'drop_shadow', 'cutout', 'outline', 'opacity']);
   const canEdit = (it) => !!it && it.type === 'image' && !!it.asset && !!Assets.get(it.asset);
 
   function open(it) {
@@ -857,7 +886,7 @@ const PhotoEdit = (() => {
       const pop = document.createElement('div');
       pop.className = 'pe-add';
       pop.innerHTML = PhotoFX.GROUPS.map((gname) => `<div class="pe-add-group"><h6>${esc(gname)}</h6>${Object.entries(T)
-        .filter(([, t]) => t.group === gname)
+        .filter(([, t]) => t.group === gname && !t.notPhotos)
         .map(([type, t]) => `<button data-add="${type}">${esc(t.name)}${ONCE.has(type) && work.some((e) => e.type === type) ? ' <em>(on)</em>' : ''}</button>`)
         .join('')}</div>`).join('');
       document.body.appendChild(pop);
@@ -1138,7 +1167,7 @@ const PhotoEdit = (() => {
   }
 
   return {
-    view, dims, drawFrame, frameCss, PDF_BLEND, fadeCropped, shadowMask, shapeOf, fadeEdges, colourOf, seedOf, maskResolver,
+    view, dims, drawFrame, frameCss, BLEND, PDF_BLEND, fadeCropped, shadowMask, shapeOf, fadeEdges, outlineLayer, colourOf, seedOf, maskResolver, ONCE, labelOf,
     open, canEdit, toggle, propsHtml, multiHtml, copyEffects, pasteEffects, hasClip, hasEffects, photosIn,
   };
 })();

@@ -326,7 +326,8 @@ const App = (() => {
         if (!map[c.group]) {
           map[c.group] = uid('g');
           const was = (names && names[c.group]) || S.doc.groups[c.group];
-          S.doc.groups[map[c.group]] = { name: was ? `${was.name} copy` : Model.newGroupName(S.doc) };
+          // The copy keeps the group's effects too, with effects of its own (new ids).
+          S.doc.groups[map[c.group]] = { name: was ? `${was.name} copy` : Model.newGroupName(S.doc), effects: (was && was.effects ? clone(was.effects) : []).map((e) => ({ ...e, id: PhotoFX.make(e.type).id })) };
         }
         c.group = map[c.group];
       }

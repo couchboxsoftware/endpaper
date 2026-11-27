@@ -32,6 +32,7 @@ const Panels = (() => {
     rb.addEventListener('keydown', onFieldKey);
     rb.addEventListener('click', onRightClick);
     rb.addEventListener('contextmenu', onRightContext);
+    ItemFX.bind(rb); // the Effects list of groups, text and shapes
     rightResize();
   }
 
@@ -349,7 +350,7 @@ const Panels = (() => {
     const row = (it, inGroup) => `<div class="layer${sel.has(it.id) ? ' on' : ''}${it.hidden ? ' is-hidden' : ''}${inGroup ? ' in-group' : ''}" draggable="true" data-layer="${it.id}">
         <button class="tog" data-tog="hidden" title="${it.hidden ? 'Show' : 'Hide'}">${it.hidden ? '◌' : '◉'}</button>
         <button class="tog" data-tog="locked" title="${it.locked ? 'Unlock' : 'Lock'}">${it.locked ? '🔒' : '·'}</button>
-        <span class="lic">${ICON[it.type]}</span><span class="lname">${esc(Model.itemLabel(it))}</span></div>`;
+        <span class="lic">${ICON[it.type]}</span><span class="lname">${esc(Model.itemLabel(it))}</span>${PhotoFX.active(it.effects).length ? '<span class="fx-tag" title="This has effects">fx</span>' : ''}</div>`;
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i];
       if (!it.group) {
@@ -367,7 +368,7 @@ const Panels = (() => {
       html += `<div class="layer layer-group${on ? ' on' : ''}${allHidden ? ' is-hidden' : ''}" draggable="true" data-group-row="${gid}">
         <button class="tog" data-gtog="hidden" title="${allHidden ? 'Show the group' : 'Hide the group'}">${allHidden ? '◌' : '◉'}</button>
         <button class="tog" data-gtog="locked" title="${allLocked ? 'Unlock the group' : 'Lock the group'}">${allLocked ? '🔒' : '·'}</button>
-        <button class="lfold" data-fold title="${open ? 'Close' : 'Open'}">${open ? '▾' : '▸'}</button><span class="lic">📁</span><span class="lname">${esc((doc.groups[gid] && doc.groups[gid].name) || 'Group')}</span><em class="muted">${members.length}</em></div>`;
+        <button class="lfold" data-fold title="${open ? 'Close' : 'Open'}">${open ? '▾' : '▸'}</button><span class="lic">📁</span><span class="lname">${esc((doc.groups[gid] && doc.groups[gid].name) || 'Group')}</span>${doc.groups[gid] && ItemFX.hasAny(doc.groups[gid].effects) ? '<span class="fx-tag" title="This group has effects">fx</span>' : ''}<em class="muted">${members.length}</em></div>`;
       if (open) for (const m of members) html += row(m, true);
     }
     if (!items.length) html += '<p class="hint">Nothing on this page yet. Pick a tool at the top and drag on the page.</p>';
@@ -487,6 +488,7 @@ const Panels = (() => {
     else if (items.length > 1) html = multiProps(items);
     else html = surface.kind === 'cover' ? coverProps() : docProps();
     $('#right-body').innerHTML = html;
+    ItemFX.mount($('#right-body')); // texture grids and curves in the Effects list
   }
   const refreshGeometry = debounce(() => {
     if ((S().rightTab || 'props') !== 'props') return;
@@ -535,6 +537,8 @@ const Panels = (() => {
         <div class="grid2">${it.stroke ? len('Border', 'strokeW', it.strokeW) : ''}${it.type === 'rect' ? len('Corners', 'radius', it.radius || 0) : ''}</div></section>`;
     }
     if (it.type === 'line') h += `<section><h5>Line</h5>${colorBtn('Colour', 'stroke', it.stroke, false)}<div class="grid2">${len('Weight', 'strokeW', it.strokeW)}</div></section>`;
+    // Effects on a text box or shape (a photo's are in Edit photo).
+    if (it.type !== 'image') h += `<section><h5>Effects</h5>${ItemFX.panelHtml(doc, 'i:' + it.id)}</section>`;
     h += `<section><div class="btn-row"><button class="btn btn-sm" data-act="lock">${it.locked ? 'Unlock' : 'Lock'}</button><button class="btn btn-sm" data-act="duplicate">Duplicate</button><button class="btn btn-sm btn-danger-ghost" data-act="delete">Delete</button></div></section>`;
     return h;
   }
@@ -574,7 +578,8 @@ const Panels = (() => {
     const head = g
       ? `<section><h5>Group · ${esc(g.name)} <span class="muted">· ${items.length}</span></h5>
         <p class="hint">Drag a corner to scale everything in it, text included. Double-click a box to work on it on its own.</p>
-        <div class="btn-row"><button class="btn btn-sm" data-act="rename-group">Rename…</button><button class="btn btn-sm" data-act="ungroup" title="Ctrl+Shift+G">Ungroup</button></div></section>`
+        <div class="btn-row"><button class="btn btn-sm" data-act="rename-group">Rename…</button><button class="btn btn-sm" data-act="ungroup" title="Ctrl+Shift+G">Ungroup</button></div></section>
+        <section><h5>Group effects</h5><p class="hint">These go on the group as one shape: one shadow, one outline round the outside.</p>${ItemFX.panelHtml(S().doc, 'g:' + gid)}</section>`
       : `<section><div class="btn-row"><button class="btn btn-sm" data-act="group" title="Keep these together (Ctrl+G)">Group</button>${items.some((x) => x.group) ? '<button class="btn btn-sm" data-act="ungroup" title="Ctrl+Shift+G">Ungroup</button>' : ''}</div></section>`;
     return `${head}<section><h5>${items.length} selected</h5>
       <div class="field field-wide"><span>Align</span><div class="seg">

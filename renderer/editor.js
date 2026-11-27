@@ -5,6 +5,7 @@ const Editor = (() => {
   let stage, board, overlay;
   let geo = []; // pages of the current spread: { surface, ox, oy, w, h, bl:{l,t,r,b} }
   const els = new Map();
+  const fxHidden = new Set(); // boxes shown as a picture with their effects instead (renderer/itemfx.js)
   let guidesShown = []; // snap lines while dragging
   let drag = null;
   let spaceDown = false;
@@ -93,6 +94,7 @@ const Editor = (() => {
     const keep = new Set();
     const pagesHost = $('#pages-host', board);
     pagesHost.innerHTML = '';
+    fxHidden.clear();
     const fed = new Set(); // boxes that text continues into aren't empty
     for (const s of Model.allSurfaces(doc)) for (const x of Model.surfaceItems(doc, s)) if (x.next) fed.add(x.next);
     for (const g of geo) {
@@ -105,7 +107,23 @@ const Editor = (() => {
       inner.style.top = g.bl.t * k + 'px';
       pageEl.appendChild(inner);
       const pc = Render.ctxFor(doc, g.surface);
-      for (const { it, master } of Render.itemsOf(doc, g.surface)) {
+      const shown = Render.itemsOf(doc, g.surface);
+      // Groups, text and shapes with effects (renderer/itemfx.js): a shadow under their boxes, an
+      // outline over them, or (picture effects) one picture over them with the boxes made
+      // invisible but still there to click. While you type in one, its effects pause.
+      const typing = S().editing && S().editing.id;
+      const fxAt = new Map(); // box id -> { shared: { e, els }, first, last }
+      for (const e of ItemFX.entities(doc, shown.map((x) => x.it), { photos: true })) {
+        if (e.items.some((x) => x.id === typing)) continue;
+        const shared = { e, els: null };
+        e.items.forEach((x, i) => fxAt.set(x.id, { shared, first: i === 0, last: i === e.items.length - 1 }));
+      }
+      for (const { it, master } of shown) {
+        const fx = fxAt.get(it.id);
+        if (fx && fx.first) {
+          fx.shared.els = ItemFX.screenEls(doc, fx.shared.e, k, devicePixelRatio || 1, pc);
+          if (fx.shared.els && fx.shared.els.under) inner.appendChild(fx.shared.els.under);
+        }
         const key = (master ? 'm:' + g.surface.idx + ':' : '') + it.id;
         let el = els.get(key);
         if (!el) {
@@ -119,8 +137,10 @@ const Editor = (() => {
         el.dataset.master = master ? '1' : '';
         paint(el, it, pc, k);
         if (S().editing && S().editing.id === it.id && !master) el.style.visibility = 'hidden';
+        if (fx && fx.shared.els && fx.shared.els.hide) (el.style.opacity = '0'), fxHidden.add(el);
         inner.appendChild(el);
         keep.add(key);
+        if (fx && fx.last && fx.shared.els && fx.shared.els.over) inner.appendChild(fx.shared.els.over);
       }
       pagesHost.appendChild(pageEl);
     }
@@ -774,10 +794,17 @@ const Editor = (() => {
     const { doc, surface } = S();
     const g = geoFor(surface);
     if (!g) return;
+    // Moving or resizing something with effects: they're worked out again, so draw it all.
+    const withFx = (it) => (it.type !== 'image' && ItemFX.hasAny(it.effects)) || (it.group && doc.groups[it.group] && ItemFX.hasAny(doc.groups[it.group].effects)) || (it.type === 'image' && PhotoFX.frameEffects(it.effects).outline);
+    if (selectedItems().some(withFx)) {
+      render();
+      return Panels.refreshGeometry();
+    }
     const pc = Render.ctxFor(doc, surface);
     for (const it of Model.surfaceItems(doc, surface)) {
       const el = els.get(it.id);
       if (el) paint(el, it, pc, z());
+      if (el && fxHidden.has(el)) el.style.opacity = '0'; // shown as a picture with its effects
     }
     // Text in other boxes of a thread can move when a box is resized.
     if (drag && drag.kind === 'resize' && drag.it.type === 'text') render();

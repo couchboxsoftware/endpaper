@@ -579,6 +579,25 @@ const PhotoFX = (() => {
         }
       },
     },
+    // A line round the shape: a photo's frame (or its cut-out), or a group's or text's merged
+    // shape. Outside, centred on the edge, or inside, and moved out (+) or in (−) by the offset.
+    // Drawn on top, by whoever draws the frame (outlineMask() works out where the line goes).
+    outline: {
+      name: 'Outline', group: 'Shape and blending', frame: true,
+      params: [
+        { k: 'colour', label: 'Colour', type: 'colour', def: { c: 0, m: 0, y: 0, k: 100 } },
+        range('width', 'Width', 0.1, 10, 0.8, 0.1, ' mm'),
+        { k: 'position', label: 'Position', type: 'select', def: 'outside', options: [['outside', 'Outside'], ['centre', 'Centred on the edge'], ['inside', 'Inside']] },
+        range('offset', 'Offset', -10, 10, 0, 0.1, ' mm'),
+        { k: 'corners', label: 'Corners', type: 'select', def: 'round', options: [['round', 'Rounded'], ['square', 'Square']] },
+      ],
+    },
+    // How see-through the whole thing is, as one (a group's overlaps don't show through each other).
+    // Photos have Opacity in their Properties, so this is for groups, text and shapes.
+    opacity: {
+      name: 'Opacity', group: 'Shape and blending', frame: true, notPhotos: true,
+      params: [range('amount', 'Opacity', 0, 100, 70, 1, '%')],
+    },
     drop_shadow: {
       name: 'Drop shadow', group: 'Shape and blending', frame: true,
       params: [range('distance', 'Distance', 0, 30, 2.5, 0.1, ' mm'), range('angle', 'Angle', 0, 359, 135, 1, '°'), range('softness', 'Softness', 0, 30, 3, 0.1, ' mm'), range('opacity', 'Strength', 0, 100, 45, 1, '%'), { k: 'colour', label: 'Colour', type: 'colour', def: { c: 0, m: 0, y: 0, k: 100 } }],
@@ -617,9 +636,117 @@ const PhotoFX = (() => {
       if (e.type === 'fade_edges') out.fade = e.p;
       if (e.type === 'blend_mode') out.blend = e.p.mode;
       if (e.type === 'drop_shadow') out.shadow = e.p;
+      if (e.type === 'outline') out.outline = { ...Object.fromEntries(TYPES.outline.params.map((q) => [q.k, q.def])), ...e.p };
+      if (e.type === 'opacity') out.opacity = Math.max(0, Math.min(1, (e.p.amount ?? 70) / 100));
     }
     return out;
   }
+
+  /* ---------- outlines ---------- */
+  // Where an outline goes round a shape. alpha: the shape's see-through-ness (0-255 per pixel,
+  // w × h); p: the Outline settings; ppmm: pixels per mm. Returns how much of each pixel the line
+  // covers (0-255). Distances are worked out exactly: round corners measure straight-line
+  // distance, square corners the greater of across and down.
+  function outlineMask(alpha, w, h, p, ppmm) {
+    const W = Math.max(0, p.width) * ppmm, off = (p.offset || 0) * ppmm;
+    const pos = p.position || 'outside';
+    const lo = pos === 'outside' ? off : pos === 'inside' ? off - W : off - W / 2;
+    const hi = lo + W;
+    const n = w * h;
+    const inside = new Uint8Array(n);
+    for (let i = 0; i < n; i++) inside[i] = alpha[i] >= 128 ? 1 : 0;
+    const dOut = distanceTo(inside, 1, w, h, p.corners === 'square'); // to the shape
+    const dIn = distanceTo(inside, 0, w, h, p.corners === 'square'); // to outside the shape
+    const out = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      // Signed distance from the edge: + outside, − inside (pixel centres sit half a pixel in).
+      const sd = inside[i] ? -(dIn[i] - 0.5) : dOut[i] - 0.5;
+      const a = Math.min(1, Math.max(0, sd - lo + 0.5)) * Math.min(1, Math.max(0, hi - sd + 0.5));
+      out[i] = Math.round(a * 255);
+    }
+    return out;
+  }
+  // Distance from every pixel to the nearest pixel whose mask value is `want`.
+  function distanceTo(mask, want, w, h, square) {
+    const n = w * h;
+    const BIG = 1e12;
+    if (square) {
+      // Chessboard distance: two passes, each step (straight or diagonal) counting 1.
+      const d = new Float32Array(n);
+      for (let i = 0; i < n; i++) d[i] = mask[i] === want ? 0 : BIG;
+      for (let y = 0; y < h; y++)
+        for (let x = 0; x < w; x++) {
+          const i = y * w + x;
+          let v = d[i];
+          if (x > 0) v = Math.min(v, d[i - 1] + 1);
+          if (y > 0) {
+            v = Math.min(v, d[i - w] + 1);
+            if (x > 0) v = Math.min(v, d[i - w - 1] + 1);
+            if (x < w - 1) v = Math.min(v, d[i - w + 1] + 1);
+          }
+          d[i] = v;
+        }
+      for (let y = h - 1; y >= 0; y--)
+        for (let x = w - 1; x >= 0; x--) {
+          const i = y * w + x;
+          let v = d[i];
+          if (x < w - 1) v = Math.min(v, d[i + 1] + 1);
+          if (y < h - 1) {
+            v = Math.min(v, d[i + w] + 1);
+            if (x < w - 1) v = Math.min(v, d[i + w + 1] + 1);
+            if (x > 0) v = Math.min(v, d[i + w - 1] + 1);
+          }
+          d[i] = v;
+        }
+      return d;
+    }
+    // Straight-line distance: squared distances down each column, then across each row
+    // (Felzenszwalb and Huttenlocher), then the square root.
+    const g = new Float64Array(n);
+    for (let i = 0; i < n; i++) g[i] = mask[i] === want ? 0 : BIG;
+    const m = Math.max(w, h);
+    const f = new Float64Array(m), dd = new Float64Array(m), v = new Int32Array(m), z = new Float64Array(m + 1);
+    for (let x = 0; x < w; x++) {
+      for (let y = 0; y < h; y++) f[y] = g[y * w + x];
+      edt1d(f, h, dd, v, z);
+      for (let y = 0; y < h; y++) g[y * w + x] = dd[y];
+    }
+    const out = new Float32Array(n);
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) f[x] = g[y * w + x];
+      edt1d(f, w, dd, v, z);
+      for (let x = 0; x < w; x++) out[y * w + x] = Math.sqrt(dd[x]);
+    }
+    return out;
+  }
+  function edt1d(f, n, d, v, z) {
+    let k = 0;
+    v[0] = 0;
+    z[0] = -Infinity;
+    z[1] = Infinity;
+    for (let q = 1; q < n; q++) {
+      let s = (f[q] + q * q - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+      while (s <= z[k]) {
+        k--;
+        s = (f[q] + q * q - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+      }
+      k++;
+      v[k] = q;
+      z[k] = s;
+      z[k + 1] = Infinity;
+    }
+    k = 0;
+    for (let q = 0; q < n; q++) {
+      while (z[k + 1] < q) k++;
+      d[q] = (q - v[k]) * (q - v[k]) + f[v[k]];
+    }
+  }
+  // How far past the shape an outline reaches (mm), so there's room to draw it.
+  const outlineReach = (o) => {
+    const W = Math.max(0, o.width), off = o.offset || 0, pos = o.position || 'outside';
+    const hi = pos === 'outside' ? off + W : pos === 'inside' ? off : off + W / 2;
+    return Math.max(0, hi) + 0.3;
+  };
 
   /* ---------- rendering ---------- */
   // The picture with its geometric and pixel effects, at `scale` × the source's size.
@@ -667,6 +794,6 @@ const PhotoFX = (() => {
     return bins;
   }
 
-  return { TYPES, GROUPS, make, active, hasPixelWork, hasAlpha, inOrder, geometry, outSize, frameEffects, render, histogram, curveLut };
+  return { TYPES, GROUPS, make, active, hasPixelWork, hasAlpha, inOrder, outlineMask, outlineReach, geometry, outSize, frameEffects, render, histogram, curveLut };
 })();
 if (typeof module !== 'undefined') module.exports = PhotoFX;

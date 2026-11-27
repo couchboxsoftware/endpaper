@@ -10,6 +10,11 @@ const Hints = (() => {
       text: "This box comes from the page's master, so it's locked here. To change it on this page only, hold Ctrl and Shift and click it. Other pages keep the master's version.",
       where: 'Double-clicking something from a master on a page',
     },
+    'raster-text': {
+      title: 'This text will print as a picture',
+      text: "Effects like Blur, Black and white or Texture can't be printed on text as it is, so when you export, this part is turned into a picture (600 ppi, sharp at normal reading distance). In Endpaper it stays as text: you can still click in and change it, and while you type its effects pause. Check lists every place this happens. Shadows, outlines, fades, blend modes and opacity keep text as text.",
+      where: 'Adding a picture effect to text, or to a group with text in it',
+    },
     // Shown as its own window (renderer/inkdesktop.js), but turned off and on like any hint.
     'try-inkdesktop': {
       title: 'Try Inkdesktop',

@@ -56,7 +56,9 @@ const Pdf = (() => {
       page.setTrimBox(ext.l * k, ext.b * k, sz.w * k, sz.h * k);
       page.setBleedBox((ext.l - bl.l) * k, (ext.b - bl.b) * k, (sz.w + bl.l + bl.r) * k, (sz.h + bl.t + bl.b) * k);
       const ops = [];
-      const push = (...o) => ops.push(...o);
+      // Where drawing goes: the page, or (for a group drawn as one, see drawFx) a group of its own.
+      let sink = ops;
+      const push = (...o) => sink.push(...o);
       const cmyk = (c) => [c.c / 100, c.m / 100, c.y / 100, c.k / 100];
       const fillC = (c) => op.setFillingCmykColor(...cmyk(c));
       const strokeC = (c) => op.setStrokingCmykColor(...cmyk(c));
@@ -68,9 +70,21 @@ const Pdf = (() => {
       const org = Model.surfaceOrigin(doc, s);
       if (org) push(op.concatTransformationMatrix(1, 0, 0, 1, -org, 0));
       const pc = Render.ctxFor(doc, s);
-      for (const { it } of Render.itemsOf(doc, s)) {
+      // Groups, text and shapes with effects are drawn with them, once, where their first box is.
+      const list = Render.itemsOf(doc, s).map((x) => x.it);
+      const fxOf = new Map();
+      for (const e of ItemFX.entities(doc, list)) for (const it of e.items) fxOf.set(it.id, e);
+      const done = new Set();
+      for (const it of list) {
+        const e = fxOf.get(it.id);
+        if (e) {
+          if (!done.has(e.key)) done.add(e.key), await drawFx(e, pc);
+          continue;
+        }
         if (it.hidden) continue;
         await drawItem(it, pc);
+        // A photo's outline (round its frame, or its cut-out).
+        if (it.type === 'image' && PhotoFX.frameEffects(it.effects).outline) await drawFx({ key: 'p:' + it.id, kind: 'photo', items: [it], effects: it.effects.filter((x) => x.type === 'outline') }, pc);
       }
       push(op.popGraphicsState());
       if (crop) cropMarks(sz, bl);
@@ -101,6 +115,106 @@ const Pdf = (() => {
         if (alpha < 1) push(op.setGraphicsState(gs(alpha)));
         const key = node.newXObject('Sh', base);
         push(op.concatTransformationMatrix(m.w, 0, 0, -m.h, m.x, m.y + m.h), op.drawObject(key), op.popGraphicsState());
+      }
+
+      /* ----- effects on groups, text and shapes (renderer/itemfx.js) -----
+         Shadow and outline: soft masks in their CMYK colour, worked out at high resolution.
+         Picture effects: the thing becomes a picture (600 ppi with text in it, else 300),
+         stored without loss so text stays clean. Otherwise the boxes are drawn as they are (text
+         stays text), as one transparency group when it has Opacity, a Blend mode or Fade edges,
+         so overlaps inside it don't show through each other. */
+      async function drawFx(ent, pc) {
+        const fx = PhotoFX.frameEffects(ent.effects.filter((e) => e.type === 'outline' || ItemFX.allowed(e.type)));
+        const picture = ent.kind !== 'photo' && ItemFX.pictureEffects(ent.effects).length > 0;
+        const ppi = (picture && ItemFX.hasText(ent)) || fx.outline ? 600 : 300;
+        const r = ItemFX.compose(doc, ent, ppi / 25.4, pc);
+        if (!r) return;
+        if (r.under && fx.shadow) maskImage(r.under, r, fx.shadow.colour, r.opacity);
+        if (ent.kind !== 'photo') {
+          if (picture) rasterImage(r);
+          else {
+            const members = ent.items.filter((x) => !x.hidden);
+            const drawMembers = async () => {
+              for (const m of members) {
+                if (ent.kind === 'group' && m.type !== 'image' && ItemFX.hasAny(m.effects)) await drawFx({ key: 'i:' + m.id, kind: 'item', items: [m], effects: m.effects }, pc);
+                else {
+                  await drawItem(m, pc);
+                  if (m.type === 'image' && PhotoFX.frameEffects(m.effects).outline) await drawFx({ key: 'p:' + m.id, kind: 'photo', items: [m], effects: m.effects.filter((x) => x.type === 'outline') }, pc);
+                }
+              }
+            };
+            if (r.opacity < 1 || r.blend || r.fade) {
+              const saved = sink;
+              sink = [];
+              await drawMembers();
+              const inner = sink;
+              sink = saved;
+              const box = [r.x, r.y, r.x + r.w, r.y + r.h];
+              node.normalizedEntries(); // the page's resources exist, so the group can share them
+              const form = ctx.register(ctx.formXObject(inner, { BBox: box, Resources: node.Resources(), Group: { Type: 'Group', S: 'Transparency' } }));
+              push(op.pushGraphicsState());
+              if (r.opacity < 1) push(op.setGraphicsState(gs(r.opacity)));
+              if (r.blend && PhotoEdit.PDF_BLEND[r.blend]) push(op.setGraphicsState(blendGs(r.blend)));
+              if (r.fade && fx.fade) push(op.setGraphicsState(fadeGs(members, fx.fade.width, box)));
+              push(op.drawObject(node.newXObject('Fx', form)), op.popGraphicsState());
+            } else await drawMembers();
+          }
+        }
+        if (r.over && fx.outline) maskImage(r.over, r, fx.outline.colour, r.opacity);
+      }
+      // A soft mask (a canvas's see-through-ness) painted in a CMYK colour, over r's area.
+      function maskImage(c, r, colourRef, alpha) {
+        const d = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data;
+        const grey = new Uint8Array(c.width * c.height);
+        for (let i = 0; i < grey.length; i++) grey[i] = d[i * 4 + 3];
+        const col = Model.resolveColor(doc, colourRef) || { c: 0, m: 0, y: 0, k: 100 };
+        const smask = ctx.register(ctx.flateStream(grey, { Type: 'XObject', Subtype: 'Image', Width: c.width, Height: c.height, ColorSpace: 'DeviceGray', BitsPerComponent: 8 }));
+        const ink = new Uint8Array([col.c, col.m, col.y, col.k].map((v) => Math.round(v * 2.55)));
+        const base = ctx.register(ctx.stream(ink, { Type: 'XObject', Subtype: 'Image', Width: 1, Height: 1, ColorSpace: 'DeviceCMYK', BitsPerComponent: 8, SMask: smask }));
+        const w = c.width / r.s, h = c.height / r.s;
+        push(op.pushGraphicsState());
+        if (alpha < 1) push(op.setGraphicsState(gs(alpha)));
+        push(op.concatTransformationMatrix(w, 0, 0, -h, r.x, r.y + h), op.drawObject(node.newXObject('Fm', base)), op.popGraphicsState());
+      }
+      // The thing as a picture, in CMYK through the printing profile, stored without loss.
+      function rasterImage(r) {
+        const c = r.content;
+        const px = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data;
+        const { cmyk, alpha } = Color.imageToCmyk(px, c.width, c.height);
+        const dict = { Type: 'XObject', Subtype: 'Image', Width: c.width, Height: c.height, ColorSpace: 'DeviceCMYK', BitsPerComponent: 8 };
+        if (alpha) dict.SMask = ctx.register(ctx.flateStream(alpha, { Type: 'XObject', Subtype: 'Image', Width: c.width, Height: c.height, ColorSpace: 'DeviceGray', BitsPerComponent: 8 }));
+        const ref = ctx.register(ctx.flateStream(cmyk, dict));
+        const w = c.width / r.s, h = c.height / r.s;
+        push(op.pushGraphicsState());
+        if (r.opacity < 1) push(op.setGraphicsState(gs(r.opacity)));
+        if (r.blend && PhotoEdit.PDF_BLEND[r.blend]) push(op.setGraphicsState(blendGs(r.blend)));
+        push(op.concatTransformationMatrix(w, 0, 0, -h, r.x, r.y + h), op.drawObject(node.newXObject('Fr', ref)), op.popGraphicsState());
+      }
+      // Fade edges on boxes kept as they are: a soft mask that fades to nothing at their edges.
+      function fadeGs(members, fadeMm, box) {
+        const b = ItemFX.bounds(members);
+        const bw = b.x1 - b.x0, bh = b.y1 - b.y0;
+        const f = Math.max(0.01, Math.min(fadeMm, bw / 2, bh / 2));
+        const pxmm = 150 / 25.4;
+        const pw = Math.max(2, Math.round(bw * pxmm)), ph = Math.max(2, Math.round(bh * pxmm));
+        const grey = new Uint8Array(pw * ph);
+        for (let y = 0; y < ph; y++) {
+          const my = ((y + 0.5) / ph) * bh;
+          const ay = Math.min(1, Math.min(my, bh - my) / f);
+          for (let x = 0; x < pw; x++) {
+            const mx = ((x + 0.5) / pw) * bw;
+            grey[y * pw + x] = Math.round(Math.min(1, Math.min(mx, bw - mx) / f) * ay * 255);
+          }
+        }
+        const img = ctx.register(ctx.flateStream(grey, { Type: 'XObject', Subtype: 'Image', Width: pw, Height: ph, ColorSpace: 'DeviceGray', BitsPerComponent: 8 }));
+        const g = ctx.register(
+          ctx.formXObject([op.pushGraphicsState(), op.concatTransformationMatrix(bw, 0, 0, -bh, b.x0, b.y0 + bh), op.drawObject('Fd'), op.popGraphicsState()], {
+            BBox: box,
+            Resources: { XObject: { Fd: img } },
+            Group: { Type: 'Group', S: 'Transparency', CS: 'DeviceGray' },
+          })
+        );
+        return node.newExtGState('GS', ctx.register(ctx.obj({ Type: 'ExtGState', SMask: { Type: 'Mask', S: 'Luminosity', G: g } })));
       }
 
       function rectPath(x, y, w, h, r) {

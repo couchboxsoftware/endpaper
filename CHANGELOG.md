@@ -19,6 +19,21 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.23 · 27 Nov 2026
+Give groups, text and shapes effects, and outline anything.
+
+### New
+- Outline, a new effect, draws a line round a photo's frame, a cut-out, text or a whole group: outside, centred on the edge or inside, moved out or in by an offset, with rounded or square corners.
+- Groups have their own effects (Properties, Group effects). They go on the group as one shape: one drop shadow, and one outline round the outside, whatever overlaps inside.
+- Text boxes and shapes have effects too, in their Properties.
+- Opacity, a new effect for groups, text and shapes, fades the whole thing as one.
+- Layers shows an fx tag on anything with effects.
+- Text with effects like Blur or Black and white stays editable: its effects pause while you type, and come back when you're done. It prints as a picture (600 ppi); a yellow note on the effect and Check say so, and a hint explains why.
+
+### Improved
+- Shadows, outlines, fades, blend modes and opacity keep text as text in the print PDF.
+- Copying or duplicating a group keeps its effects.
+
 ## 0.1.22 · 26 Nov 2026
 Blur softens a cut-out's outline, and can blur a photo's edges too.
 

@@ -113,7 +113,18 @@ const Render = (() => {
     ctx.clip();
     ctx.translate(-Model.surfaceOrigin(doc, surface) * scale, 0);
     const pc = ctxFor(doc, surface);
-    for (const { it } of itemsOf(doc, surface)) if (!it.hidden) drawItem(ctx, doc, it, scale, pc);
+    // Groups, text and shapes with effects are drawn with them (renderer/itemfx.js), once, where
+    // their first box is.
+    const list = itemsOf(doc, surface).map((x) => x.it);
+    const fx = new Map();
+    for (const e of ItemFX.entities(doc, list)) for (const it of e.items) fx.set(it.id, e);
+    const done = new Set();
+    for (const it of list) {
+      const e = fx.get(it.id);
+      if (e) {
+        if (!done.has(e.key)) done.add(e.key), ItemFX.draw(ctx, doc, e, scale, pc);
+      } else if (!it.hidden) drawItem(ctx, doc, it, scale, pc);
+    }
     ctx.restore();
   }
 

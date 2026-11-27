@@ -501,7 +501,9 @@ const Model = (() => {
   function usedTextures(doc, items) {
     const used = new Set();
     const list = items || allSurfaces(doc).flatMap((s) => surfaceItems(doc, s));
-    for (const it of list) for (const e of it.effects || []) if (e.type === 'texture' && e.p && e.p.tex && e.p.tex.kind === 'own') used.add(e.p.tex.id);
+    // Groups have effects of their own too (a Texture on a whole group).
+    const owners = [...list, ...(items ? [...new Set(items.map((it) => it.group).filter(Boolean))].map((g) => doc.groups && doc.groups[g]).filter(Boolean) : Object.values(doc.groups || {}))];
+    for (const it of owners) for (const e of it.effects || []) if (e.type === 'texture' && e.p && e.p.tex && e.p.tex.kind === 'own') used.add(e.p.tex.id);
     return used;
   }
   function pruneTextures(doc) {

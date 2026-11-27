@@ -122,6 +122,8 @@ body.linking #stage { cursor: alias; }
 .item svg { position: absolute; left: 0; top: 0; overflow: visible; display: block; }
 .item svg.txt text { white-space: pre; font-kerning: normal; }
 .item-image { overflow: hidden; }
+/* Effects on groups, text and shapes (renderer/itemfx.js): pictures laid under or over the boxes. */
+.item-fx { position: absolute; pointer-events: none; }
 .item-image img { position: absolute; max-width: none; user-select: none; pointer-events: none; }
 .img-empty { position: absolute; inset: 0; background: repeating-linear-gradient(45deg, #ecebf2 0 10px, #e2e0ea 10px 20px); display: grid; place-items: center; color: #6c6880; font-size: 11px; text-align: center; padding: 4px; outline: 1px dashed #b7b3c6; outline-offset: -1px; }
 .txt-empty { position: absolute; inset: 0; outline: 1px dashed #b7b3c6; outline-offset: -1px; color: #9b97ad; font-size: 11px; padding: 3px 5px; }
@@ -561,6 +563,17 @@ body.test-version .mb-test { display: inline-block; }
 .pe-quick { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; }
 .pe-qrow { display: flex; align-items: center; gap: 6px; }
 .pe-qrow.off span { color: var(--faint); text-decoration: line-through; }
+/* The Effects list of groups, text and shapes (renderer/itemfx.js). */
+.ifx { display: flex; flex-direction: column; gap: 2px; }
+.ifx-row { cursor: pointer; border-radius: 6px; padding: 1px 2px; }
+.ifx-row:hover { background: var(--panel-2); }
+.ifx-row > span { flex: 1; }
+.ifx-item.open .ifx-row { background: var(--panel-2); }
+.ifx-settings { padding: 2px 4px 8px 26px; }
+.ifx-settings .pe-field { grid-template-columns: 78px 1fr 46px; }
+.ifx-curve { width: 100%; max-width: 256px; aspect-ratio: 1; background: #141317; border-radius: 6px; }
+.fx-warn { margin: 2px 0 4px 26px; padding: 5px 8px; border-radius: 6px; background: #3d321a; color: var(--warn); font-size: 12px; line-height: 1.4; }
+.fx-tag { flex: none; font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 4px; background: #2b2440; color: #c9b8ff; margin-left: 4px; }
 .pe-head-btns { display: flex; gap: 4px; }
 .pe-btns { flex-wrap: wrap; }
 /* Texture picker (Texture effect) */
