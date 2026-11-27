@@ -339,7 +339,7 @@ const Panels = (() => {
     }
   }
 
-  const ICON = { text: 'T', image: '▣', rect: '■', ellipse: '●', line: '╱' };
+  const ICON = { text: 'T', image: '▣', rect: '■', ellipse: '●', line: '╱', barcode: '▥' };
   // Groups whose folder is closed in Layers (open is the usual; this lasts while Endpaper is open).
   const closedGroups = new Set();
   const openGroup = (gid) => gid && closedGroups.delete(gid);
@@ -514,7 +514,7 @@ const Panels = (() => {
   function itemProps(it) {
     const { doc } = S();
     let h = `<section><h5>${esc(Model.typeName[it.type])}${it.locked ? ' <span class="tag">Locked</span>' : ''}</h5>
-      <div class="grid2">${len('X', 'x', it.x)}${len('Y', 'y', it.y)}${len('W', 'w', it.w)}${it.type === 'line' ? '' : len('H', 'h', it.h)}${num('Rotate', 'rot', it.rot || 0, '°')}${num('Opacity', 'opacity', Math.round((it.opacity ?? 1) * 100), '%')}</div></section>`;
+      <div class="grid2">${len('X', 'x', it.x)}${len('Y', 'y', it.y)}${it.type === 'barcode' ? '' : len('W', 'w', it.w)}${it.type === 'line' || it.type === 'barcode' ? '' : len('H', 'h', it.h)}${num('Rotate', 'rot', it.rot || 0, '°')}${num('Opacity', 'opacity', Math.round((it.opacity ?? 1) * 100), '%')}</div></section>`;
     if (it.masterRef) {
       const p = S().surface.kind === 'page' && doc.pages[S().surface.idx];
       const ms = p && Model.master(doc, p.master);
@@ -538,11 +538,68 @@ const Panels = (() => {
     }
     if (it.type === 'line') h += `<section><h5>Line</h5>${colorBtn('Colour', 'stroke', it.stroke, false)}<div class="grid2">${len('Weight', 'strokeW', it.strokeW)}</div></section>`;
     // Effects on a text box or shape (a photo's are in Edit photo).
-    if (it.type !== 'image') h += `<section><h5>Effects</h5>${ItemFX.panelHtml(doc, 'i:' + it.id)}</section>`;
+    if (it.type === 'barcode') h += barcodeSection(it);
+    if (it.type !== 'image' && it.type !== 'barcode') h += `<section><h5>Effects</h5>${ItemFX.panelHtml(doc, 'i:' + it.id)}</section>`;
     h += `<section><div class="btn-row"><button class="btn btn-sm" data-act="lock">${it.locked ? 'Unlock' : 'Lock'}</button><button class="btn btn-sm" data-act="duplicate">Duplicate</button><button class="btn btn-sm btn-danger-ghost" data-act="delete">Delete</button></div></section>`;
     return h;
   }
 
+
+  // An ISBN barcode: whose ISBN, the price code, and its size (80% to 200% of the standard).
+  function barcodeSection(it) {
+    const { doc } = S();
+    const v = Barcode.isbnOf(doc, it);
+    const p = Barcode.parse(v);
+    const pct = Math.round(Barcode.scaleOf(it) * 100);
+    return `<section><h5>ISBN barcode</h5>
+      <div class="field field-wide"><span>ISBN</span><input class="input" data-bc="isbn" value="${esc(v)}" placeholder="978-…" spellcheck="false"></div>
+      <p class="hint ${v && !p.ok ? 'bad' : ''}">${!v ? 'Type the ISBN, 10 or 13 digits.' : p.ok ? `Checked: ${p.isbn ? 'ISBN ' + p.line : 'EAN ' + p.ean}.` : esc(p.error)} ${it.own ? 'This barcode has its own ISBN.' : "It's the book's ISBN, also in File, Shipment preparation."}</p>
+      <label class="switch"><input type="checkbox" data-bc="own" ${it.own ? 'checked' : ''}><span>Its own ISBN, not the book's</span></label>
+      <label class="switch"><input type="checkbox" data-bc="price" ${it.price ? 'checked' : ''}><span>Price code beside it</span></label>
+      ${it.price ? `<div class="field field-wide"><span>Price code</span><input class="input" data-bc="priceCode" value="${esc(it.priceCode || '')}" maxlength="5" spellcheck="false"></div>
+      <p class="hint ${Barcode.priceOk(it.priceCode) ? '' : 'bad'}">5 digits: the currency first (5 is US dollars), then the price, like 51299 for $12.99. 90000 means no price.</p>` : ''}
+      <div class="grid2"><label class="field"><span>Size</span><input class="input" data-bc="scale" value="${pct}"><em>%</em></label></div>
+      <p class="hint">80% to 200%; 100% is the standard size. Drag a corner to change it.</p></section>`;
+  }
+  function barcodeField(el) {
+    const { doc } = S();
+    const it = Editor.selectedItems()[0];
+    if (!it || it.type !== 'barcode') return;
+    const k = el.dataset.bc;
+    // Changes that make it wider or narrower keep its right edge where it is (it usually sits
+    // in the back cover's bottom-right corner).
+    const resize = (fn) => {
+      const right = it.x + it.w, bottom = it.y + it.h;
+      fn();
+      it.x = right - it.w;
+      it.y = bottom - it.h;
+    };
+    if (k === 'isbn') return App.change('ISBN', () => (it.own ? (it.isbn = el.value.trim()) : (doc.print.isbn = el.value.trim())), { thumbs: 'all' });
+    if (k === 'own') return App.change('Barcode', () => ((it.own = el.checked), el.checked && !it.isbn && (it.isbn = doc.print.isbn || '')), { thumbs: 'all' });
+    if (k === 'price')
+      return App.change('Price code', () =>
+        resize(() => {
+          const s = Barcode.scaleOf(it);
+          it.price = el.checked;
+          const b = Barcode.base(it);
+          it.w = b.w * s;
+          it.h = b.h * s;
+        })
+      );
+    if (k === 'priceCode') return App.change('Price code', () => (it.priceCode = el.value.trim()));
+    if (k === 'scale') {
+      const v = parseFloat(String(el.value).replace(',', '.'));
+      if (!(v > 0)) return renderProps();
+      const s = clamp(v, Barcode.MIN * 100, Barcode.MAX * 100) / 100;
+      return App.change('Barcode size', () =>
+        resize(() => {
+          const b = Barcode.base(it);
+          it.w = b.w * s;
+          it.h = b.h * s;
+        })
+      );
+    }
+  }
 
   // The Text section for one text box or several. With several, a field shows a value only when
   // all of them share it; whatever you set goes to every selected box and nothing else.
@@ -702,6 +759,7 @@ const Panels = (() => {
       if (v == null) return renderProps();
       return applyField(el.dataset.f, v);
     }
+    if (el.dataset.bc) return barcodeField(el);
     if (el.dataset.font) {
       const items = Editor.selectedItems();
       let path;

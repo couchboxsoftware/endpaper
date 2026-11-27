@@ -590,3 +590,5 @@ body.test-version .mb-test { display: inline-block; }
 .tx-actions { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .tx-actions .hint { margin: 0; font-size: 11px; }
 .fit-btns { margin: 0; }
+/* An ISBN barcode whose ISBN is mistyped: it says why, on the page only. */
+.barcode-bad { position: absolute; inset: 0; display: grid; place-items: center; padding: 4px; background: #fff; outline: 1px dashed #d33; color: #b00020; font-size: 11px; line-height: 1.3; text-align: center; }

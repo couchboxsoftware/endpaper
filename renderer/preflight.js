@@ -51,6 +51,13 @@ const Preflight = (() => {
             if (out_ && onPage && (it.text || '').trim()) add('warn', `${name} goes outside the safe area, so it could be trimmed off.`, s, it);
           }
         }
+        if (it.type === 'barcode') {
+          const p = Barcode.parse(Barcode.isbnOf(doc, orig));
+          if (!p.ok) add('error', `The barcode's ISBN isn't right: ${p.error}`, s, it);
+          const sc = Barcode.scaleOf(orig);
+          if (sc < Barcode.MIN - 0.005 || sc > Barcode.MAX + 0.005) add('warn', `The barcode is ${Math.round(sc * 100)}% of the standard size. Keep it between 80% and 200% so shops' scanners can read it.`, s, it);
+          if (orig.price && !Barcode.priceOk(orig.priceCode)) add('error', 'The price code beside the barcode needs 5 digits, like 51299 for $12.99, or 90000 for no price.', s, it);
+        }
         if (it.type === 'rect' || it.type === 'ellipse') {
           const f = Model.resolveColor(doc, it.fill);
           if (f && Model.ink(f) > 300) add('warn', `${name} uses ${Model.ink(f)}% ink. Most printers ask for 300% or less.`, s, it);

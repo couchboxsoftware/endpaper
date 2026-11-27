@@ -213,6 +213,43 @@ const App = (() => {
     return it;
   }
 
+  // Insert, ISBN barcode: on a book with a cover, on the back cover, bottom right, inside its
+  // safe area; otherwise bottom right inside the page's margins. It uses the book's ISBN, asked
+  // for first if there isn't one yet.
+  async function addBarcode() {
+    const doc = S.doc;
+    let isbn = (doc.print && doc.print.isbn) || '';
+    if (!Barcode.parse(isbn).ok) {
+      const v = await prompt("The book's ISBN", isbn, { ok: 'Add barcode', label: 'ISBN, 10 or 13 digits' });
+      if (v == null) return;
+      const p = Barcode.parse(v);
+      if (!p.ok) return toast(p.error, { kind: 'warn', ms: 8000 });
+      isbn = v.trim();
+    }
+    const b = Barcode.base({ price: false });
+    let surface = S.surface, x, y;
+    if (doc.cover && doc.cover.enabled) {
+      const c = Model.cover(doc);
+      surface = Model.isSingle(doc) ? { kind: 'cover', part: 'back' } : { kind: 'cover' };
+      x = c.back[1] - 6 - 4 - b.w; // 6 mm safe area, and a little room
+      y = doc.h - 6 - 4 - b.h;
+    } else {
+      const sz = Model.surfaceSize(doc, S.surface);
+      const m = S.surface.kind === 'page' ? Model.margins(doc, Model.side(doc, S.surface.idx)) : { right: 6, bottom: 6 };
+      x = Model.surfaceOrigin(doc, S.surface) + sz.w - m.right - b.w;
+      y = sz.h - m.bottom - b.h;
+    }
+    let it;
+    change('Add barcode', () => {
+      doc.print.isbn = isbn;
+      it = Model.newItem('barcode', x, y, b.w, b.h, doc);
+      Model.surfaceItems(doc, surface).push(it);
+      S.sel = new Set([it.id]);
+    }, { thumbs: 'all' });
+    setTool('select');
+    goTo(surface, { keepSel: true });
+  }
+
   async function pickPhotoFor(it) {
     const files = await ep.image.pick(false);
     if (files[0]) await setPhoto(it, files[0]);
@@ -1522,6 +1559,7 @@ const App = (() => {
           { label: '&Photo frame', key: 'P', disabled: noDoc, run: tool('image') },
           { label: 'P&lace photos…', disabled: noDoc, run: async () => { const f = await ep.image.pick(true); if (f.length) placePhotos(f); } },
           { label: 'Place te&xt…', disabled: noDoc, run: () => PlaceText.open() },
+          { label: 'ISBN &barcode…', disabled: noDoc, run: () => addBarcode() },
           '-',
           { label: '&Rectangle', key: 'R', disabled: noDoc, run: tool('rect') },
           { label: '&Ellipse', key: 'E', disabled: noDoc, run: tool('ellipse') },
@@ -1635,7 +1673,7 @@ const App = (() => {
     Panels.init();
     // Each finished piece moves the splash screen's bar along.
     const step = (name) => (r) => (ep.app.boot(name), r);
-    await Promise.all([Fonts.init().then(step('fonts')), kit.load().then(step('brand kit')), loadProfile().then(step('colour'))]);
+    await Promise.all([Fonts.init().then(step('fonts')), kit.load().then(step('brand kit')), loadProfile().then(step('colour')), Barcode.load()]);
     showLoading(false);
     Updates.init();
     // After an update: open the design that was open, on the page it was on.

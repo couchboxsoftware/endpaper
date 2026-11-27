@@ -276,6 +276,30 @@ const Pdf = (() => {
             push(op.concatTransformationMatrix(img.w, 0, 0, -img.h, img.x, img.y + img.h), op.drawObject(key), op.popGraphicsState());
           }
           if (stroke && sw) push(strokeC(stroke), op.setLineWidth(sw), op.rectangle(0, 0, it.w, it.h), op.stroke());
+        } else if (it.type === 'barcode') {
+          // On white, then the bars and numbers in 100% black only, as vector shapes.
+          const bc = Barcode.shapes(doc, it);
+          push(fillC({ c: 0, m: 0, y: 0, k: 0 }), op.rectangle(0, 0, it.w, it.h), op.fill());
+          if (bc.ok) {
+            push(fillC({ c: 0, m: 0, y: 0, k: 100 }));
+            for (const b of bc.bars) push(op.rectangle(b.x, b.y, b.w, b.h));
+            if (bc.bars.length) push(op.fill());
+            for (const cmds of bc.text) {
+              let cx = 0, cy = 0;
+              for (const [c, ...n] of cmds) {
+                if (c === 'M') push(op.moveTo(n[0], n[1])), ([cx, cy] = n);
+                else if (c === 'L') push(op.lineTo(n[0], n[1])), ([cx, cy] = n);
+                else if (c === 'C') push(op.appendBezierCurve(...n)), (cx = n[4]), (cy = n[5]);
+                else if (c === 'Q') {
+                  // A TrueType curve, as the cubic curve PDF draws.
+                  const [qx, qy, x, y] = n;
+                  push(op.appendBezierCurve(cx + (2 / 3) * (qx - cx), cy + (2 / 3) * (qy - cy), x + (2 / 3) * (qx - x), y + (2 / 3) * (qy - y), x, y));
+                  (cx = x), (cy = y);
+                } else push(op.closePath());
+              }
+            }
+            if (bc.text.length) push(op.fill());
+          }
         } else if (it.type === 'text') {
           const L = Layout.box(doc, it, pc);
           const st = L.style || Model.styleOf(doc, it);

@@ -69,7 +69,10 @@ const Shipment = (() => {
       wide: true,
       cls: 'shipment',
       body: `<div class="sp">
-        <div class="sp-col"><h5>Paper and binding</h5>${paperFields(doc.print, { cover: doc.cover.enabled })}</div>
+        <div class="sp-col"><h5>Paper and binding</h5>${paperFields(doc.print, { cover: doc.cover.enabled })}
+          <h5 class="sp-isbn-h">ISBN</h5>
+          <div class="field field-wide"><span>ISBN</span><input class="input" data-isbn value="${esc(doc.print.isbn || '')}" placeholder="978-…" spellcheck="false"></div>
+          <p class="hint sp-isbn-msg"></p></div>
         <div class="sp-col sp-out"><h5>One copy</h5><div class="sp-results">${resultsHtml(doc)}</div></div>
       </div>
       <div class="modal-actions"><button class="btn btn-accent" data-a="done">Done</button></div>`,
@@ -85,7 +88,24 @@ const Shipment = (() => {
       App.change('Paper and binding', () => fn(App.S.doc.print), { thumbs: 'all' });
       refresh();
     };
+    // The book's ISBN, for its barcode (Insert, Barcode). Checked as you type; kept when it's right.
+    const isbnMsg = () => {
+      const v = el.querySelector('[data-isbn]').value;
+      const p = Barcode.parse(v);
+      const msg = el.querySelector('.sp-isbn-msg');
+      msg.classList.toggle('bad', !!v.trim() && !p.ok);
+      msg.textContent = !v.trim() ? 'For the barcode on the back cover (Insert, Barcode).' : p.ok ? `Checked: ${p.isbn ? 'ISBN ' + p.line : 'EAN ' + p.ean}. Barcodes on the cover use it.` : p.error;
+      return p;
+    };
+    isbnMsg();
+    el.querySelector('[data-isbn]').addEventListener('input', isbnMsg);
     el.addEventListener('change', (e) => {
+      if (e.target.dataset.isbn !== undefined) {
+        const v = e.target.value.trim();
+        const p = isbnMsg();
+        if (!v || p.ok) App.change('ISBN', () => (App.S.doc.print.isbn = v), { thumbs: 'all' });
+        return;
+      }
       if (!e.target.dataset.pf) return;
       const next = { ...App.S.doc.print };
       if (readField(next, e.target)) apply((p) => Object.assign(p, next));

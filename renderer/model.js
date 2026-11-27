@@ -157,12 +157,14 @@ const Model = (() => {
     if (type === 'ellipse') Object.assign(it, { fill: { sw: 'sw-cyan' }, stroke: null, strokeW: 0.5 });
     if (type === 'line') Object.assign(it, { stroke: { sw: 'sw-black' }, strokeW: 0.5 });
     if (type === 'image') Object.assign(it, { asset: null, fit: 'fill', s: 1, ox: 0, oy: 0, stroke: null, strokeW: 0.5 });
+    // An ISBN barcode (renderer/barcode.js): the book's ISBN unless own, and an optional price code.
+    if (type === 'barcode') Object.assign(it, { own: false, isbn: '', price: false, priceCode: '90000' });
     delete it.style?.id;
     delete it.style?.name;
     return it;
   }
 
-  const typeName = { text: 'Text', image: 'Photo', rect: 'Rectangle', ellipse: 'Ellipse', line: 'Line' };
+  const typeName = { text: 'Text', image: 'Photo', rect: 'Rectangle', ellipse: 'Ellipse', line: 'Line', barcode: 'ISBN barcode' };
   const itemLabel = (it) => it.name || (it.type === 'text' && it.text ? it.text.replace(/\s+/g, ' ').slice(0, 28) : typeName[it.type]);
 
   /* ---------- pages, spreads and masters ---------- */

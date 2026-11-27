@@ -174,6 +174,10 @@ const Editor = (() => {
         ? `<img draggable="false" src="${a.url}" style="left:${it.ox * k}px;top:${it.oy * k}px;width:${a.w * it.s * k}px;height:${a.h * it.s * k}px">`
         : `<div class="img-empty"><span>${it.asset ? 'Loading…' : 'Double-click to add a photo'}</span></div>`;
       if (st && it.strokeW) html += `<svg class="shape" width="${W}" height="${H}"><rect x="0" y="0" width="${W}" height="${H}" fill="none" stroke="${Color.css(st)}" stroke-width="${it.strokeW * k}"/></svg>`;
+    } else if (it.type === 'barcode') {
+      // An ISBN barcode: vector bars and OCR-B numbers on white (renderer/barcode.js).
+      sig = ['b', Barcode.ready(), Barcode.isbnOf(doc, it), it.price, it.priceCode, W, H].join('|');
+      html = Barcode.svg(doc, it, k);
     } else if (it.type === 'text') {
       const L = Layout.box(doc, it, pc);
       const st = L.style || Model.styleOf(doc, it);
@@ -313,7 +317,7 @@ const Editor = (() => {
       const single = items.length === 1 && !it.locked;
       const handles =
         single && !S().crop
-          ? (it.type === 'line' ? ['w', 'e'] : ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']).map((h) => `<i class="h h-${h}" data-h="${h}"></i>`).join('') + '<i class="h h-rot" data-h="rot"></i>'
+          ? (it.type === 'line' ? ['w', 'e'] : it.type === 'barcode' ? ['nw', 'ne', 'se', 'sw'] : ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']).map((h) => `<i class="h h-${h}" data-h="${h}"></i>`).join('') + '<i class="h h-rot" data-h="rot"></i>'
           : '';
       overlay.insertAdjacentHTML('beforeend', `<div class="sel ${it.locked ? 'sel-locked' : ''}${items.length > 1 ? ' sel-member' : ''}" data-id="${it.id}" style="${boxStyle(gg, it)}">${handles}</div>`);
     }
@@ -615,7 +619,8 @@ const Editor = (() => {
       let nh = it.type === 'line' ? o.h : Math.max(1, o.h + hy * ly);
       // A photo's corner scales the whole picture, frame and photo together, from the opposite
       // corner (Shift: change the frame's shape instead, which crops like a side).
-      const photoScale = it.type === 'image' && hx && hy && !e.shiftKey;
+      // A barcode's corners always scale it (it only has corners).
+      const photoScale = (it.type === 'image' && hx && hy && !e.shiftKey) || (it.type === 'barcode' && hx && hy);
       if (photoScale) {
         // How far along the diagonal the pointer has gone.
         const s = Math.max(1 / Math.max(o.w, o.h), (hx * lx * o.w + hy * ly * o.h) / (o.w * o.w + o.h * o.h) + 1);
@@ -648,7 +653,13 @@ const Editor = (() => {
         if (hy === -1 && it.type !== 'line') { const s = snap1([o.y + o.h - nh], t.ys, tol); if (s) (nh -= s.d), guidesShown.push({ y: drag.g.oy + s.t * k }); }
       }
       // Shift on a corner keeps the shape (photos keep it anyway, unless Shift is held).
-      if (e.shiftKey && hx && hy && it.type !== 'image') {
+      // A barcode stays between 80% and 200% of the standard size, its shape exact.
+      if (it.type === 'barcode') {
+        const bb = Barcode.base(it);
+        nw = Math.max(bb.w * Barcode.MIN, Math.min(bb.w * Barcode.MAX, nw));
+        nh = (nw * bb.h) / bb.w;
+      }
+      if (e.shiftKey && hx && hy && it.type !== 'image' && it.type !== 'barcode') {
         if (nw / nh > drag.aspect) nh = nw / drag.aspect;
         else nw = nh * drag.aspect;
       }

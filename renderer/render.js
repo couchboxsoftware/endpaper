@@ -159,6 +159,8 @@ const Render = (() => {
       ctx.beginPath();
       ctx.rect(0, 0, it.w * k, it.h * k);
       if (stroke && sw) (ctx.strokeStyle = Color.css(stroke)), (ctx.lineWidth = sw), ctx.stroke();
+    } else if (it.type === 'barcode') {
+      Barcode.draw(ctx, doc, it, k);
     } else if (it.type === 'text') {
       const L = Layout.box(doc, it, pc);
       const st = L.style || Model.styleOf(doc, it);

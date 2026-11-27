@@ -1,0 +1,12 @@
+OCR-B (OCRB.ttf), used for the numbers on ISBN barcodes.
+
+From the OCR A and OCR B fonts by Matthew Skala, version 0.3.1 (2021),
+https://tsukurimashou.org/ocr.php
+
+The letter forms come from Metafont sources by Norbert Schwarz, whose notice
+reads: "Copyright 1995, 2010 Norbert Schwarz. You may freely use, modify
+and/or distribute this file, without limitation." Matthew Skala's conversion
+is public domain ("I make no copyright claim on these fonts myself").
+
+OCR-A from the same package is not included: its notice does not allow
+distribution for profit.
