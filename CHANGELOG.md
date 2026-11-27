@@ -19,6 +19,16 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.24 · 27 Nov 2026
+Add your book's ISBN barcode to the back cover in one click.
+
+### New
+- Insert, ISBN barcode puts the barcode on the back cover, bottom right, inside the safe area: "ISBN 978-…" above, the bars, and the digits in the usual OCR-B lettering.
+- The book's ISBN goes in File, Shipment preparation, and is checked as you type: a wrong digit is caught before it reaches print. A 10-digit ISBN becomes the 13-digit one.
+- A price code beside the barcode, like 51299 for $12.99 or 90000 for no price (the barcode's Properties).
+- Drag a barcode's corner to scale it between 80% and 200% of the standard size, or set it in Properties. Check warns if it's ever outside that, or if the ISBN or price code is wrong.
+- In the print PDF, the barcode is sharp vector bars in 100% black on white.
+
 ## 0.1.23 · 27 Nov 2026
 Give groups, text and shapes effects, and outline anything.
 
