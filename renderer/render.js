@@ -24,6 +24,27 @@ const Assets = (() => {
     return p;
   }
   const get = (id) => imgs.get(id) || null;
+  // A small copy (up to 512 px across) for thumbnails and small views, made once, so they don't
+  // draw from the full-size photo every time.
+  const PROXY = 512;
+  function proxy(id) {
+    const v = imgs.get(id);
+    if (!v) return null;
+    if (!v.proxy) {
+      const k = Math.min(1, PROXY / Math.max(v.w, v.h));
+      if (k >= 1) v.proxy = v.img;
+      else {
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(v.w * k));
+        c.height = Math.max(1, Math.round(v.h * k));
+        const g = c.getContext('2d');
+        g.imageSmoothingQuality = 'high';
+        g.drawImage(v.img, 0, 0, c.width, c.height);
+        v.proxy = c;
+      }
+    }
+    return v.proxy;
+  }
   async function ensureDoc(doc) {
     await Promise.all(Object.keys(doc.assets).map((id) => load(doc, id)));
     if (typeof Textures !== 'undefined') await Textures.ensureDoc(doc); // your own textures, for photo effects
@@ -43,7 +64,7 @@ const Assets = (() => {
     Object.assign(doc.assets[id], { w: v.w, h: v.h });
     return id;
   }
-  return { load, get, ensureDoc, add };
+  return { load, get, proxy, ensureDoc, add };
 })();
 
 const Render = (() => {

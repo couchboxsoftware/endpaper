@@ -96,15 +96,65 @@ const Panels = (() => {
 
   // 'inside' / 'outside' (or nothing), and optionally 'front' / 'back' for single cover pages.
   const coverFromKey = (a, b) => ({ kind: 'cover', ...(a === 'inside' ? { side: 'inside' } : {}), ...(b ? { part: b } : {}) });
+  /* Thumbnails are redrawn quietly: a change marks them out of date, and they're drawn again
+     one at a time while the app is idle, the ones you can see first. Until then each keeps its
+     old picture (a new page starts blank). So a change never waits for every thumbnail. */
+  const thumbWidth = (s) => (Model.isCoverPage(s) ? 96 : s.kind === 'cover' ? 200 : 76);
+  const queue = new Map(); // key -> surface, waiting to be drawn
+  const holders = new Map(); // key -> the element on screen that shows it
   function thumbFor(s) {
     const key = skey(s);
     if (allThumbsDirty || dirtyThumbs.has(key) || !thumbs.has(key)) {
-      const c = Render.thumb(S().doc, s, Model.isCoverPage(s) ? 96 : s.kind === 'cover' ? 200 : 76);
-      c.className = 'thumb-canvas';
-      thumbs.set(key, c);
+      queue.set(key, s);
       dirtyThumbs.delete(key);
+      if (!thumbs.has(key)) {
+        // Blank, the page's shape, until it's drawn.
+        const sz = Model.surfaceSize(S().doc, s);
+        const c = document.createElement('canvas');
+        c.width = thumbWidth(s);
+        c.height = Math.max(1, Math.round((c.width * sz.h) / sz.w));
+        const g = c.getContext('2d');
+        g.fillStyle = '#fff';
+        g.fillRect(0, 0, c.width, c.height);
+        c.className = 'thumb-canvas';
+        thumbs.set(key, c);
+      }
+      drawThumbsSoon();
     }
     return thumbs.get(key);
+  }
+  let idleId = 0;
+  const idle = window.requestIdleCallback || ((fn) => setTimeout(() => fn({ timeRemaining: () => 8, didTimeout: true }), 60));
+  function drawThumbsSoon() {
+    if (!idleId) idleId = idle(drawSomeThumbs, { timeout: 600 });
+  }
+  function drawSomeThumbs(deadline) {
+    idleId = 0;
+    const doc = S().doc;
+    if (!doc || !queue.size) return;
+    // The ones you can see first.
+    const host = $('#left-body');
+    const hr = host.getBoundingClientRect();
+    const seen = (key) => {
+      const el = holders.get(key);
+      if (!el || !el.isConnected) return false;
+      const r = el.getBoundingClientRect();
+      return r.bottom > hr.top && r.top < hr.bottom;
+    };
+    let done = 0;
+    while (queue.size && (done === 0 || deadline.timeRemaining() > 12)) {
+      const key = [...queue.keys()].find(seen) || queue.keys().next().value;
+      const s = queue.get(key);
+      queue.delete(key);
+      if (s.kind === 'page' && !doc.pages[s.idx]) continue;
+      const c = Render.thumb(doc, s, thumbWidth(s));
+      c.className = 'thumb-canvas';
+      const old = thumbs.get(key);
+      thumbs.set(key, c);
+      if (old && old.parentNode) old.replaceWith(c);
+      done++;
+    }
+    if (queue.size) drawThumbsSoon();
   }
   function invalidateThumbs(surface) {
     if (!surface || surface.kind === 'master') allThumbsDirty = true;
@@ -161,6 +211,7 @@ const Panels = (() => {
     for (const el of $$('[data-thumb]', host)) {
       const [kind, a, b] = el.dataset.thumb.split(':');
       const s = kind === 'page' ? { kind, idx: +a } : kind === 'master' ? { kind, id: a, side: b } : coverFromKey(a, b);
+      holders.set(skey(s), el);
       el.appendChild(thumbFor(s));
     }
     allThumbsDirty = false;

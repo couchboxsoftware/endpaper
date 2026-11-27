@@ -125,6 +125,8 @@ body.linking #stage { cursor: alias; }
 /* Effects on groups, text and shapes (renderer/itemfx.js): pictures laid under or over the boxes. */
 .item-fx { position: absolute; pointer-events: none; }
 .item-image img { position: absolute; max-width: none; user-select: none; pointer-events: none; }
+.item-image .img-fx-host { position: absolute; pointer-events: none; }
+.img-fx-host .img-fx { display: block; width: 100%; height: 100%; }
 .img-empty { position: absolute; inset: 0; background: repeating-linear-gradient(45deg, #ecebf2 0 10px, #e2e0ea 10px 20px); display: grid; place-items: center; color: #6c6880; font-size: 11px; text-align: center; padding: 4px; outline: 1px dashed #b7b3c6; outline-offset: -1px; }
 .txt-empty { position: absolute; inset: 0; outline: 1px dashed #b7b3c6; outline-offset: -1px; color: #9b97ad; font-size: 11px; padding: 3px 5px; }
 .guides { position: absolute; left: 0; top: 0; overflow: visible; }
@@ -464,7 +466,7 @@ body.test-version .mb-test { display: inline-block; }
 #bookview .bv-book.bv-grab { cursor: grabbing; }
 #bookview .bv-shadow { position: absolute; left: 3%; right: 3%; bottom: -26px; height: 40px; border-radius: 50%; background: radial-gradient(closest-side, rgba(0, 0, 0, 0.55), rgba(0, 0, 0, 0)); pointer-events: none; }
 #bookview .bv-side { position: absolute; top: 0; background-size: 100% 100%; }
-#bookview .bv-edges { position: absolute; top: 2px; bottom: 2px; background: repeating-linear-gradient(90deg, #e2ddd2 0 1px, #bdb7aa 1px 2px); }
+#bookview .bv-edges { position: absolute; top: 2px; bottom: 2px; background: repeating-linear-gradient(90deg, var(--edge-a, #e2ddd2) 0 1px, var(--edge-b, #bdb7aa) 1px 2px); }
 #bookview .bv-cast { position: absolute; top: 0; pointer-events: none; opacity: 0; }
 #bookview .bv-castR { background: linear-gradient(90deg, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0) 45%); }
 #bookview .bv-castL { background: linear-gradient(270deg, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0) 45%); }
@@ -473,6 +475,15 @@ body.test-version .mb-test { display: inline-block; }
 #bookview .bv-face { position: absolute; inset: 0; backface-visibility: hidden; background-repeat: no-repeat; }
 #bookview .bv-face.bv-back { transform: rotateY(180deg); }
 #bookview .bv-face::after, #bookview .bv-cf::after { content: ''; position: absolute; inset: 0; background: rgba(0, 0, 0, var(--sh, 0)); }
+/* The paper's shine (renderer/bookview.js shine()): turning pages and the closed book catch the
+   light by their angle; pages lying open have a soft fixed sheen on gloss and silk. No z-index:
+   a turning page's strips overlap by a hair, and the next strip has to cover this one's shine. */
+#bookview .bv-face::before, #bookview .bv-cf::before { content: ''; position: absolute; inset: 0; background: rgba(255, 255, 255, var(--gl, 0)); pointer-events: none; }
+#bookview .bv-side::before { content: ''; position: absolute; inset: 0; pointer-events: none; }
+#bookview.bv-gloss .bv-side::before { background: linear-gradient(118deg, transparent 32%, rgba(255, 255, 255, 0.14) 46%, rgba(255, 255, 255, 0.04) 54%, transparent 64%); }
+#bookview.bv-silk .bv-side::before { background: linear-gradient(118deg, transparent 22%, rgba(255, 255, 255, 0.06) 45%, transparent 72%); }
+#bookview .bv-paper { position: absolute; right: 18px; display: flex; align-items: center; gap: 8px; }
+#bookview .bv-paper .seg button { min-width: 0; font-size: 12px; }
 #bookview .bv-closed { position: absolute; top: 0; transform-style: preserve-3d; display: none; }
 #bookview .bv-cf { position: absolute; backface-visibility: hidden; }
 #bookview .bv-spinning .bv-closed { display: block; }
@@ -482,7 +493,7 @@ body.test-version .mb-test { display: inline-block; }
 #bookview .bv-bar .btn { min-width: 34px; font-size: 15px; }
 #bookview .bv-where { min-width: 170px; text-align: center; }
 #bookview .bv-tip { position: absolute; left: 18px; color: var(--muted); font-size: 12px; }
-@media (max-width: 1100px) { #bookview .bv-tip { display: none; } }
+@media (max-width: 1500px) { #bookview .bv-tip { display: none; } }
 
 /* ---------- Shipment preparation (renderer/shipment.js) and New book's More options ---------- */
 .sp { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; }

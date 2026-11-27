@@ -5,6 +5,42 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const uid = (p = '') => p + Math.random().toString(36).slice(2, 9) + Date.now().toString(36).slice(-3);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const clone = (o) => JSON.parse(JSON.stringify(o));
+/* A store of finished pictures kept to a memory budget (bytes), not a number of entries: the
+   least recently used go first. Something bigger than half the budget isn't kept at all (a page
+   worked out at print size for an export, say). set(key, value, bytes); get(key). */
+function memCache(budget) {
+  const map = new Map(); // key -> { v, b }
+  let total = 0;
+  return {
+    get(k) {
+      const e = map.get(k);
+      if (!e) return undefined;
+      map.delete(k);
+      map.set(k, e); // most recently used last
+      return e.v;
+    },
+    set(k, v, bytes) {
+      if (map.has(k)) (total -= map.get(k).b), map.delete(k);
+      if (bytes > budget / 2) return;
+      map.set(k, { v, b: bytes });
+      total += bytes;
+      while (total > budget && map.size > 1) {
+        const [ok, oe] = map.entries().next().value;
+        map.delete(ok);
+        total -= oe.b;
+      }
+    },
+    values: () => [...map.values()].map((e) => e.v),
+    get bytes() {
+      return total;
+    },
+    get size() {
+      return map.size;
+    },
+  };
+}
+const pixelBytes = (...canvases) => canvases.reduce((a, c) => a + (c ? (c.width || 0) * (c.height || 0) * 4 : 0), 0);
+
 function debounce(fn, ms) {
   let t;
   const d = (...a) => {

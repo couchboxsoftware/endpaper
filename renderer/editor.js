@@ -6,6 +6,24 @@ const Editor = (() => {
   let geo = []; // pages of the current spread: { surface, ox, oy, w, h, bl:{l,t,r,b} }
   const els = new Map();
   const fxHidden = new Set(); // boxes shown as a picture with their effects instead (renderer/itemfx.js)
+  // Pictures shown straight from memory can only be in one place at a time. shownIn: which item's
+  // frame a photo's picture is in. claimed: effect pictures placed in this drawing of the page.
+  const shownIn = new WeakMap();
+  const claimed = new Set();
+  function copyOf(c) {
+    const copy = document.createElement('canvas');
+    copy.width = c.width;
+    copy.height = c.height;
+    if (c.width && c.height) copy.getContext('2d').drawImage(c, 0, 0);
+    copy.style.cssText = c.style.cssText;
+    return copy;
+  }
+  const claim = (c) => {
+    if (!c) return c;
+    const out = claimed.has(c) ? copyOf(c) : c;
+    claimed.add(out);
+    return out;
+  };
   let guidesShown = []; // snap lines while dragging
   let drag = null;
   let spaceDown = false;
@@ -95,6 +113,7 @@ const Editor = (() => {
     const pagesHost = $('#pages-host', board);
     pagesHost.innerHTML = '';
     fxHidden.clear();
+    claimed.clear();
     const fed = new Set(); // boxes that text continues into aren't empty
     for (const s of Model.allSurfaces(doc)) for (const x of Model.surfaceItems(doc, s)) if (x.next) fed.add(x.next);
     for (const g of geo) {
@@ -121,7 +140,7 @@ const Editor = (() => {
       for (const { it, master } of shown) {
         const fx = fxAt.get(it.id);
         if (fx && fx.first) {
-          fx.shared.els = ItemFX.screenEls(doc, fx.shared.e, k, devicePixelRatio || 1, pc);
+          fx.shared.els = ItemFX.screenEls(doc, fx.shared.e, k, devicePixelRatio || 1, pc, claim);
           if (fx.shared.els && fx.shared.els.under) inner.appendChild(fx.shared.els.under);
         }
         const key = (master ? 'm:' + g.surface.idx + ':' : '') + it.id;
@@ -163,6 +182,7 @@ const Editor = (() => {
     });
     let sig;
     let html;
+    let fxCanvas = null; // a photo with effects, shown as the picture it already is
     const W = it.w * k, H = it.h * k;
     if (it.type === 'image') {
       // The photo with its effects (renderer/photoedit.js), sharp enough for this zoom.
@@ -170,8 +190,14 @@ const Editor = (() => {
       const st = Model.resolveColor(doc, it.stroke);
       Object.assign(el.style, PhotoEdit.frameCss(doc, it, k));
       sig = ['i', it.asset, !!a, a && a.w, a && a.h, a && a.img && a.img.width, it.s, it.ox, it.oy, W, H, k, st && Color.css(st), it.strokeW, JSON.stringify(it.effects || [])].join('|');
+      // A photo with effects is a picture already in memory: it's shown as it is (a canvas),
+      // rather than turned into a picture-as-text copy for an <img>.
+      const place = a ? `left:${it.ox * k}px;top:${it.oy * k}px;width:${a.w * it.s * k}px;height:${a.h * it.s * k}px` : '';
+      fxCanvas = a && a.img instanceof HTMLCanvasElement && PhotoFX.hasPixelWork(it.effects) ? a.img : null;
       html = a
-        ? `<img draggable="false" src="${a.url}" style="left:${it.ox * k}px;top:${it.oy * k}px;width:${a.w * it.s * k}px;height:${a.h * it.s * k}px">`
+        ? fxCanvas
+          ? `<div class="img-fx-host" style="${place}"></div>`
+          : `<img draggable="false" src="${a.url}" style="${place}">`
         : `<div class="img-empty"><span>${it.asset ? 'Loading…' : 'Double-click to add a photo'}</span></div>`;
       if (st && it.strokeW) html += `<svg class="shape" width="${W}" height="${H}"><rect x="0" y="0" width="${W}" height="${H}" fill="none" stroke="${Color.css(st)}" stroke-width="${it.strokeW * k}"/></svg>`;
     } else if (it.type === 'barcode') {
@@ -211,6 +237,17 @@ const Editor = (() => {
     if (el._sig !== sig) {
       el._sig = sig;
       el.innerHTML = html;
+      if (fxCanvas) {
+        // A picture can only be in one place at a time: one already showing in another photo's
+        // frame (a duplicate with the same effects) stays there, and this one gets a copy. (Pages
+        // are built off-screen, so "is it on screen" can't tell.)
+        let c = fxCanvas;
+        const owner = shownIn.get(c);
+        if (owner && owner !== el && owner.contains(c)) c = copyOf(c);
+        else shownIn.set(c, el);
+        c.className = 'img-fx';
+        el.querySelector('.img-fx-host').appendChild(c);
+      }
     }
   }
 

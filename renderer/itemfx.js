@@ -82,8 +82,9 @@ const ItemFX = (() => {
   }
 
   /* ---------- working the effects out ---------- */
-  const cache = new Map();
-  const CACHE_MAX = 48;
+  // Finished effect pictures, kept to about 200 MB (renderer/util.js memCache). Ones worked out at
+  // print size for an export are too big to keep, so they go once the export's done.
+  const cache = memCache(200e6);
   const MAX_PX = 24e6; // the biggest picture worked out at once (it gets less sharp past this)
   function canvas(w, h) {
     const c = document.createElement('canvas');
@@ -128,8 +129,6 @@ const ItemFX = (() => {
     const key = keyOf(doc, ent, s, pc, b);
     const hit = cache.get(key);
     if (hit) {
-      cache.delete(key);
-      cache.set(key, hit);
       return { ...hit, x: b.x0 - m, y: b.y0 - m };
     }
     const W = Math.ceil(Wmm * s), H = Math.ceil(Hmm * s);
@@ -207,8 +206,7 @@ const ItemFX = (() => {
       screen: ent.kind !== 'photo' && (pics.length > 0 || !!fx.fade || (fx.opacity ?? 1) < 1 || !!fx.blend),
     };
     if (!missing) {
-      cache.set(key, res);
-      if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
+      cache.set(key, res, pixelBytes(res.content, res.under, res.over));
     }
     return { ...res, x: b.x0 - m, y: b.y0 - m };
   }
@@ -237,10 +235,13 @@ const ItemFX = (() => {
   // The elements that show it on the page at zoom k (dpr: screen pixels per CSS pixel).
   // { under, over, hide }: under goes before its boxes, over after them; hide: its own boxes are
   // made invisible (they stay there to click), because the picture shows instead.
-  function screenEls(doc, ent, k, dpr, pc) {
+  // claim(canvas): the page drawing's way of making sure a picture isn't already placed elsewhere
+  // (two identical groups would share one); it hands back a copy if it is.
+  function screenEls(doc, ent, k, dpr, pc, claim = (c) => c) {
     const r = compose(doc, ent, k * dpr, pc);
     if (!r) return null;
-    const place = (c, cls) => {
+    const place = (c0, cls) => {
+      const c = claim(c0);
       c.className = 'item-fx ' + cls;
       Object.assign(c.style, { left: r.x * k + 'px', top: r.y * k + 'px', width: r.w * k + 'px', height: r.h * k + 'px', mixBlendMode: '' });
       return c;
@@ -255,7 +256,7 @@ const ItemFX = (() => {
         g.drawImage(r.content, 0, 0);
         if (r.over) g.drawImage(r.over, 0, 0);
         r.flat = c;
-        const hit = [...cache.values()].find((v) => v.content === r.content);
+        const hit = cache.values().find((v) => v.content === r.content);
         if (hit) hit.flat = c;
       }
       const el = place(r.flat, 'fx-flat');

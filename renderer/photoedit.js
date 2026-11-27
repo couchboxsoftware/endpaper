@@ -7,8 +7,8 @@
    else. The photo file itself is never changed. */
 const PhotoEdit = (() => {
   /* ---------- the photo with its effects ---------- */
-  const cache = new Map(); // key -> { img (canvas), w, h, url }
-  const CACHE_MAX = 40;
+  // Finished photos with their effects, kept to about 400 MB (renderer/util.js memCache).
+  const cache = memCache(400e6); // key -> { img (canvas), w, h, url }
   const colourOf = (doc) => (ref) => Color.rgb(Model.resolveColor(doc, ref) || ref || { c: 0, m: 0, y: 0, k: 100 });
   // The size of the photo after any turn, at its own resolution (for fitting it in its frame).
   function dims(it, a) {
@@ -20,7 +20,9 @@ const PhotoEdit = (() => {
   function view(doc, it, { scale } = {}) {
     const a = it.asset && Assets.get(it.asset);
     if (!a) return null;
-    if (!PhotoFX.hasPixelWork(it.effects)) return a;
+    // Shown small (a thumbnail, a zoomed-out page): the photo's small copy will do.
+    const small = scale != null && scale * Math.max(a.w, a.h) <= 512 ? Assets.proxy(it.asset) : null;
+    if (!PhotoFX.hasPixelWork(it.effects)) return small && small !== a.img ? { img: small, w: a.w, h: a.h, url: a.url } : a;
     let s = scale == null ? Math.min(1, 1600 / Math.max(a.w, a.h)) : Math.min(1, scale);
     if (scale != null && s < 1) s = Math.min(1, Math.pow(2, Math.ceil(Math.log2(Math.max(s, 1 / 64)))));
     const fx = PhotoFX.active(it.effects).filter((e) => !PhotoFX.TYPES[e.type].frame);
@@ -31,17 +33,16 @@ const PhotoEdit = (() => {
       let missing = false;
       const texture = Textures.resolver(doc, { onMissing: () => (missing = true) });
       const mask = maskResolver(doc, () => (missing = true));
-      const img = PhotoFX.render(a.img, it.effects, { scale: s, pxPerMm: it.s ? 1 / it.s : 12, color: colourOf(doc), seed: seedOf(it), texture, mask });
+      // Worked out from the small copy when that's enough for the size it's shown at.
+      const src = small && s * Math.max(a.w, a.h) <= Math.max(small.width, small.height) ? small : a.img;
+      const f = (src.naturalWidth || src.width) / a.w;
+      const img = PhotoFX.render(src, it.effects, { scale: s / f, pxPerMm: (it.s ? 1 / it.s : 12) * f, color: colourOf(doc), seed: seedOf(it), texture, mask });
       const d = dims(it, a);
       // A removed background has to stay see-through on the page, so that one is a PNG.
       const png = PhotoFX.hasAlpha(it.effects);
       v = { img, w: d.w, h: d.h, get url() { return this._url || (this._url = png ? img.toDataURL('image/png') : img.toDataURL('image/jpeg', 0.92)); } };
       if (missing) return v;
-      cache.set(key, v);
-      if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value);
-    } else {
-      cache.delete(key);
-      cache.set(key, v); // most recently used last
+      cache.set(key, v, pixelBytes(img));
     }
     return v;
   }

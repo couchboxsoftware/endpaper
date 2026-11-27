@@ -15,9 +15,62 @@ const BookView = (() => {
   const available = (doc) => !!doc && !!doc.cover && doc.cover.enabled;
   const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+  /* ---------- the paper ----------
+     The look of the paper you'd print on (File, Shipment preparation, or tried in the bar):
+     cream warms the page; uncoated takes ink a little softer and has a faint grain; gloss and
+     silk catch the light as a page turns (see shine()). The cover has its own finish. */
+  const SHINE = { gloss: { amount: 0.5, sharp: 40 }, silk: { amount: 0.16, sharp: 6 }, uncoated: { amount: 0, sharp: 1 } };
+  const TURN_SHINE = 0.35; // a turning page's shine, against the closed book's (gloss: 50% white becomes about 18%)
+  const pagePaper = () => ({ finish: v.paper.finish, shade: v.paper.shade });
+  const coverPaper = () => ({ finish: v.doc.print.coverFinish || 'silk', shade: 'white' });
+  let grain = null;
+  function grainPattern(g) {
+    if (!grain) {
+      grain = document.createElement('canvas');
+      grain.width = grain.height = 128;
+      const gg = grain.getContext('2d');
+      const d = gg.createImageData(128, 128);
+      for (let i = 0; i < d.data.length; i += 4) {
+        const n = 255 - Math.floor(Math.random() * 26);
+        d.data[i] = d.data[i + 1] = d.data[i + 2] = n;
+        d.data[i + 3] = 255;
+      }
+      gg.putImageData(d, 0, 0);
+    }
+    return g.createPattern(grain, 'repeat');
+  }
+  function paperLook(g, w, h, p) {
+    g.save();
+    if (p.finish === 'uncoated') {
+      // Ink sinks in a little: colours a touch softer, and a faint grain.
+      g.globalCompositeOperation = 'source-over';
+      g.fillStyle = 'rgba(255,255,255,0.05)';
+      g.fillRect(0, 0, w, h);
+      g.globalCompositeOperation = 'multiply';
+      g.globalAlpha = 0.5;
+      g.fillStyle = grainPattern(g);
+      g.fillRect(0, 0, w, h);
+      g.globalAlpha = 1;
+    }
+    if (p.shade === 'cream') {
+      g.globalCompositeOperation = 'multiply';
+      g.fillStyle = 'rgb(248,240,222)';
+      g.fillRect(0, 0, w, h);
+    }
+    g.restore();
+  }
+  // How much light a face catches, turned `deg` from lying flat: the most at about 35°, when it
+  // reflects the light towards you. Sharper (and brighter) on gloss than on silk; none on uncoated.
+  function shine(finish, deg) {
+    const p = SHINE[finish] || SHINE.uncoated;
+    if (!p.amount) return 0;
+    const c = Math.max(0, Math.cos(((Math.abs(deg) - 35) * Math.PI) / 180));
+    return p.amount * Math.pow(c, p.sharp);
+  }
+
   /* ---------- drawing the book's sides ---------- */
   // One surface drawn trimmed, at `s` pixels per mm, then cut to [x0, x0 + w] mm across.
-  function drawPart(doc, surface, s, x0, w, { gutter } = {}) {
+  function drawPart(doc, surface, s, x0, w, { gutter, paper } = {}) {
     const sz = Model.surfaceSize(doc, surface);
     const full = document.createElement('canvas');
     full.width = Math.max(1, Math.round(sz.w * s));
@@ -28,6 +81,7 @@ const BookView = (() => {
     c.height = full.height;
     const g = c.getContext('2d');
     g.drawImage(full, Math.round(x0 * s), 0, c.width, c.height, 0, 0, c.width, c.height);
+    if (paper) paperLook(g, c.width, c.height, paper);
     if (gutter) shadeGutter(g, c.width, c.height, gutter);
     return c.toDataURL('image/jpeg', 0.92);
   }
@@ -47,6 +101,7 @@ const BookView = (() => {
     const g = c.getContext('2d');
     g.fillStyle = '#fff';
     g.fillRect(0, 0, c.width, c.height);
+    paperLook(g, c.width, c.height, pagePaper());
     shadeGutter(g, c.width, c.height, side);
     return c.toDataURL('image/jpeg', 0.92);
   }
@@ -58,21 +113,21 @@ const BookView = (() => {
     const outside = { kind: 'cover' };
     const inside = doc.cover.inside.enabled ? { kind: 'cover', side: 'inside' } : null;
     const face = (label, make) => ({ label, url: null, make });
-    const page = (idx, side) => face(`page ${Model.pageNumber(doc, idx)}`, () => drawPart(doc, { kind: 'page', idx }, s, 0, doc.w, { gutter: side }));
+    const page = (idx, side) => face(`page ${Model.pageNumber(doc, idx)}`, () => drawPart(doc, { kind: 'page', idx }, s, 0, doc.w, { gutter: side, paper: pagePaper() }));
     const blank = (side) => face('', () => blankPage(s, doc, side));
     const leaves = [
       {
         stiff: true,
-        front: face('front cover', () => drawPart(doc, outside, s, c.front[0], doc.w)),
-        back: inside ? face('inside front cover', () => drawPart(doc, inside, s, c.back[0], doc.w, { gutter: 'left' })) : blank('left'),
+        front: face('front cover', () => drawPart(doc, outside, s, c.front[0], doc.w, { paper: coverPaper() })),
+        back: inside ? face('inside front cover', () => drawPart(doc, inside, s, c.back[0], doc.w, { gutter: 'left', paper: coverPaper() })) : blank('left'),
       },
     ];
     const n = doc.pages.length;
     for (let i = 0; i < n; i += 2) leaves.push({ front: page(i, 'right'), back: i + 1 < n ? page(i + 1, 'left') : blank('left') });
     leaves.push({
       stiff: true,
-      front: inside ? face('inside back cover', () => drawPart(doc, inside, s, c.front[0], doc.w, { gutter: 'right' })) : blank('right'),
-      back: face('back cover', () => drawPart(doc, outside, s, c.back[0], doc.w)),
+      front: inside ? face('inside back cover', () => drawPart(doc, inside, s, c.front[0], doc.w, { gutter: 'right', paper: coverPaper() })) : blank('right'),
+      back: face('back cover', () => drawPart(doc, outside, s, c.back[0], doc.w, { paper: coverPaper() })),
     });
     return leaves;
   }
@@ -96,6 +151,8 @@ const BookView = (() => {
     const W = doc.w * k, H = doc.h * k;
     const c = Model.cover(doc);
     v = { doc, k, s, W, H, T: Math.max(4, c.spine * k), SW: (doc.w * k) / N, state: 0, spin: 0, turn: null, spinning: false, queue: [], anim: 0, grab: null };
+    // The paper shown: the book's own, until you try another in the bar.
+    v.paper = { finish: doc.print.pagesFinish || 'uncoated', shade: doc.print.pagesShade || 'white' };
     v.leaves = buildLeaves(doc, s);
     v.LEAVES = v.leaves.length;
 
@@ -120,9 +177,15 @@ const BookView = (() => {
         <span class="bv-where"></span>
         <button class="btn btn-sm" data-bv="next" title="Next page (Right arrow)">›</button>
         <button class="btn btn-sm" data-bv="last" title="Close the book on the back cover (End)">⏭</button>
+        <div class="bv-paper">
+          <div class="seg" data-bv-seg="finish" title="The pages' finish">${Model.FINISHES.map(([val, l]) => `<button data-v="${val}">${l}</button>`).join('')}</div>
+          <div class="seg" data-bv-seg="shade" title="The pages' shade">${Model.SHADES.map(([val, l]) => `<button data-v="${val}">${l}</button>`).join('')}</div>
+          <button class="btn btn-sm btn-accent" data-bv="use" hidden title="Make this the book's paper (File, Shipment preparation)">Use this paper</button>
+        </div>
       </div>`;
     document.body.appendChild(root);
     build();
+    syncPaper();
     fit();
     draw();
     label();
@@ -140,6 +203,43 @@ const BookView = (() => {
     v = null;
   }
   const q = (sel) => root.querySelector(sel);
+
+  // The paper switcher: shows what's chosen, and Use this paper when it isn't the book's own.
+  function syncPaper() {
+    for (const seg of root.querySelectorAll('[data-bv-seg]')) for (const b of seg.querySelectorAll('[data-v]')) b.classList.toggle('on', b.dataset.v === v.paper[seg.dataset.bvSeg]);
+    const own = v.paper.finish === (v.doc.print.pagesFinish || 'uncoated') && v.paper.shade === (v.doc.print.pagesShade || 'white');
+    q('[data-bv="use"]').hidden = own;
+    root.classList.toggle('bv-gloss', v.paper.finish === 'gloss');
+    root.classList.toggle('bv-silk', v.paper.finish === 'silk');
+    // The page edges of the closed book and the piles of pages, in the paper's shade.
+    const [a, b] = v.paper.shade === 'cream' ? ['#ece2c9', '#c8bb9d'] : ['#e2ddd2', '#bdb7aa'];
+    root.style.setProperty('--edge-a', a);
+    root.style.setProperty('--edge-b', b);
+  }
+  // Trying another paper: the pages are drawn again in it (the cover keeps its own finish).
+  function tryPaper(key, val) {
+    if (v.paper[key] === val) return;
+    v.paper[key] = val;
+    v.leaves = buildLeaves(v.doc, v.s);
+    for (const st of v.strips) st.k = -1;
+    syncPaper();
+    draw();
+  }
+  // Use this paper: it becomes the book's (the spine follows), and the preview opens again.
+  async function usePaper() {
+    const p = { ...v.paper };
+    const at = { state: v.state, spin: v.spin };
+    App.change('Paper and binding', () => Object.assign(App.S.doc.print, { pagesFinish: p.finish, pagesShade: p.shade }), { thumbs: 'all' });
+    close();
+    await open();
+    if (v) {
+      v.state = at.state;
+      v.spin = at.spin;
+      draw();
+      label();
+    }
+    toast(`The book is now on ${p.shade} ${p.finish} paper (File, Shipment preparation).`);
+  }
 
   /* ---------- building the book on screen ---------- */
   function build() {
@@ -182,10 +282,11 @@ const BookView = (() => {
       return el;
     };
     const img = (url) => `url(${url}) 0 0 / 100% 100% no-repeat`;
-    const across = 'repeating-linear-gradient(90deg, #e2ddd2 0 1px, #bdb7aa 1px 2px)';
-    const down = 'repeating-linear-gradient(0deg, #e2ddd2 0 1px, #bdb7aa 1px 2px)';
+    // The page edges, in the paper's shade (set by syncPaper).
+    const across = 'repeating-linear-gradient(90deg, var(--edge-a, #e2ddd2) 0 1px, var(--edge-b, #bdb7aa) 1px 2px)';
+    const down = 'repeating-linear-gradient(0deg, var(--edge-a, #e2ddd2) 0 1px, var(--edge-b, #bdb7aa) 1px 2px)';
     const c = Model.cover(v.doc);
-    const spineURL = c.spine > 0.05 ? drawPart(v.doc, { kind: 'cover' }, v.s, c.spineX[0], c.spine) : null;
+    const spineURL = c.spine > 0.05 ? drawPart(v.doc, { kind: 'cover' }, v.s, c.spineX[0], c.spine, { paper: coverPaper() }) : null;
     v.cFront = side(W, H, `translateZ(${T / 2}px)`, img(urlOf(v.leaves[0].front)));
     v.cBack = side(W, H, `rotateY(180deg) translateZ(${T / 2}px)`, img(urlOf(v.leaves[v.LEAVES - 1].back)));
     v.cSpine = side(T, H, `rotateY(-90deg) translateZ(${W / 2}px)`, spineURL ? img(spineURL) : '#2b2930');
@@ -242,6 +343,11 @@ const BookView = (() => {
       v.cFront.style.setProperty('--sh', (0.55 * (1 - Math.cos(r))).toFixed(3));
       v.cBack.style.setProperty('--sh', (0.55 * (1 + Math.cos(r))).toFixed(3));
       v.cSpine.style.setProperty('--sh', (0.55 * (1 - Math.sin(r))).toFixed(3));
+      // The cover catches the light as the book turns, by the cover's finish.
+      const cf = coverPaper().finish;
+      v.cFront.style.setProperty('--gl', shine(cf, v.spin).toFixed(3));
+      v.cBack.style.setProperty('--gl', shine(cf, 180 - v.spin).toFixed(3));
+      v.cSpine.style.setProperty('--gl', shine(cf, 90 - v.spin).toFixed(3));
       v.cTop.style.setProperty('--sh', '0.18');
       return;
     }
@@ -271,6 +377,12 @@ const BookView = (() => {
       const shade = (0.42 * Math.abs(Math.sin((phi * Math.PI) / 180))).toFixed(3);
       st.f.style.setProperty('--sh', shade);
       st.b.style.setProperty('--sh', shade);
+      // A glossy page catches the light as it bends: each strip by its own angle, so the
+      // highlight slides along the curve. Covers shine by their own finish. A page in your
+      // hand catches less light than the closed book does, so it's toned down (TURN_SHINE).
+      const fin = lf.stiff ? coverPaper().finish : v.paper.finish;
+      st.f.style.setProperty('--gl', (TURN_SHINE * shine(fin, phi)).toFixed(3));
+      st.b.style.setProperty('--gl', (TURN_SHINE * shine(fin, 180 - phi)).toFixed(3));
       if (st.k !== t.k) {
         st.f.style.backgroundImage = `url(${front})`;
         st.b.style.backgroundImage = `url(${back})`;
@@ -447,9 +559,11 @@ const BookView = (() => {
 
   /* ---------- keys and buttons ---------- */
   function onClick(e) {
+    const sb = e.target.closest('[data-bv-seg] [data-v]');
+    if (sb) return tryPaper(sb.closest('[data-bv-seg]').dataset.bvSeg, sb.dataset.v);
     const b = e.target.closest('[data-bv]');
     if (!b) return;
-    ({ close, first: toFront, prev: stepLeft, next: stepRight, last: toBack })[b.dataset.bv]();
+    ({ close, first: toFront, prev: stepLeft, next: stepRight, last: toBack, use: usePaper })[b.dataset.bv]();
   }
   function onKey(e) {
     if (!root || document.querySelector('.modal-overlay') || document.querySelector('.mb-drop')) return;

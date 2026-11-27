@@ -13,7 +13,7 @@ const channels = [
   'brandkit:get', 'brandkit:set', 'textures:list', 'textures:read', 'textures:add', 'textures:update', 'textures:remove',
   'templates:list', 'templates:save', 'templates:read', 'templates:delete',
   'bin:list', 'bin:restore', 'bin:empty',
-  'recovery:write', 'recovery:clear', 'recovery:list', 'recovery:read',
+  'recovery:write', 'recovery:write-asset', 'recovery:clear', 'recovery:list', 'recovery:read',
   'update:state', 'update:check', 'update:download', 'update:install', 'update:releases', 'update:prepared',
 ];
 const api = {};

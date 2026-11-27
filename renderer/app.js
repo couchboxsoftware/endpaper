@@ -96,10 +96,11 @@ const App = (() => {
     Layout.invalidate();
     if (opts.thumbs === 'all' || S.surface.kind === 'master' || opts.thumbsShared) Panels.invalidateThumbs();
     else for (const s of Editor.spreadSurfaces(S.doc, S.surface)) Panels.invalidateThumbs(s);
-    // Covers can show {pages} and {title}, so page changes redraw their thumbnails too. And a
-    // cover's pages (front, back, inside front, inside back) are windows onto one sheet, so a box
-    // across the fold shows on more than one: a change on any of them redraws them all.
-    if (S.surface.kind === 'page' || S.surface.kind === 'cover') for (const s of Model.coverSurfaces(S.doc)) Panels.invalidateThumbs(s);
+    // A cover's pages (front, back, inside front, inside back) are windows onto one sheet, so a box
+    // across the fold shows on more than one: a change on any of them redraws them all. A change on
+    // an inside page only redraws them if the cover shows {pages} or {title}.
+    const coverShowsPages = () => [...S.doc.cover.items, ...S.doc.cover.inside.items].some((it) => it.type === 'text' && /\{(pages|title)\}/.test(it.text || ''));
+    if (S.surface.kind === 'cover' || (S.surface.kind === 'page' && coverShowsPages())) for (const s of Model.coverSurfaces(S.doc)) Panels.invalidateThumbs(s);
     render();
   }
   function markDirty() {
@@ -638,6 +639,7 @@ const App = (() => {
     S.filePath = p;
     S.dirty = false;
     ep.recovery.clear(S.doc.id);
+    recSaved.clear(); // the recovery copy and its photos are gone
     updateTitle();
     toast('Saved.');
     return true;
@@ -657,6 +659,7 @@ const App = (() => {
     if (r === 2) return false;
     if (r === 0) return await save();
     ep.recovery.clear(S.doc.id);
+    recSaved.clear(); // the recovery copy and its photos are gone
     return true;
   }
   async function openFile(path) {
@@ -720,13 +723,28 @@ const App = (() => {
   }
 
   // Unsaved work is copied to a recovery file every 20 seconds, so a crash loses little.
+  // Photos are written once each, as they're added; every 20 seconds only the design itself is
+  // written (it's small), so a big design no longer freezes the app while it's copied.
   let recRev = -1;
-  setInterval(() => {
-    if (!S.doc || !S.dirty || recRev === S.rev) return;
-    recRev = S.rev;
-    const d = JSON.parse(JSON.stringify(S.doc));
-    d.filePath = S.filePath;
-    ep.recovery.write({ id: S.doc.id, text: JSON.stringify(d) });
+  const recSaved = new Set(); // "design id/photo id" already in the recovery copy
+  let recBusy = false;
+  setInterval(async () => {
+    if (!S.doc || !S.dirty || recRev === S.rev || recBusy) return;
+    recBusy = true;
+    try {
+      recRev = S.rev;
+      const id = S.doc.id;
+      const { assets, ...rest } = S.doc;
+      for (const [aid, a] of Object.entries(assets || {})) {
+        if (recSaved.has(id + '/' + aid)) continue;
+        await ep.recovery.writeAsset({ id, assetId: aid, text: JSON.stringify(a) });
+        recSaved.add(id + '/' + aid);
+      }
+      if (!S.doc || S.doc.id !== id) return;
+      await ep.recovery.write({ id, text: JSON.stringify({ ...rest, filePath: S.filePath, assetsApart: true, assetIds: Object.keys(assets || {}) }) });
+    } finally {
+      recBusy = false;
+    }
   }, 20000);
 
   /* ================= export ================= */

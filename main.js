@@ -794,8 +794,18 @@ function purgeBin() {
 
 /* ---------- recovery (crash-safe copies of unsaved work) ---------- */
 const recDir = () => ensureDir(user('recovery'));
+// The recovery copy: the design (id.json) without its photos, which are written once each, as
+// they're added, into id.assets/ (so the 20-second copy stays small).
 handle('recovery:write', ({ id, text }) => atomicWrite(path.join(recDir(), id + '.json'), text));
-handle('recovery:clear', (id) => fs.rmSync(path.join(recDir(), id + '.json'), { force: true }));
+handle('recovery:write-asset', ({ id, assetId, text }) => {
+  const dir = ensureDir(path.join(recDir(), id + '.assets'));
+  const p = path.join(dir, assetId.replace(/[^\w-]/g, '') + '.json');
+  if (!fs.existsSync(p)) atomicWrite(p, text);
+});
+handle('recovery:clear', (id) => {
+  fs.rmSync(path.join(recDir(), id + '.json'), { force: true });
+  fs.rmSync(path.join(recDir(), id + '.assets'), { force: true, recursive: true });
+});
 handle('recovery:list', () =>
   fs
     .readdirSync(recDir())
@@ -811,4 +821,19 @@ handle('recovery:list', () =>
     })
     .filter(Boolean)
 );
-handle('recovery:read', (id) => fs.readFileSync(path.join(recDir(), id + '.json'), 'utf8'));
+handle('recovery:read', (id) => {
+  const text = fs.readFileSync(path.join(recDir(), id + '.json'), 'utf8');
+  const d = JSON.parse(text);
+  if (!d.assetsApart) return text; // older recovery copies kept their photos inside
+  // Put the photos back in.
+  d.assets = {};
+  const dir = path.join(recDir(), id + '.assets');
+  for (const aid of d.assetIds || []) {
+    try {
+      d.assets[aid] = JSON.parse(fs.readFileSync(path.join(dir, aid.replace(/[^\w-]/g, '') + '.json'), 'utf8'));
+    } catch {}
+  }
+  delete d.assetsApart;
+  delete d.assetIds;
+  return JSON.stringify(d);
+});
