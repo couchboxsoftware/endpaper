@@ -19,6 +19,22 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.26 · 27 Nov 2026
+Busy pages run smoother, and Preview book shows the paper your book is printed on.
+
+### New
+- Preview book shows your paper from Shipment preparation: gloss and silk catch the light as pages turn and the book spins, uncoated has a faint grain, and cream warms the pages.
+- A paper switcher in Preview book's bar lets you try other papers, and use the one you like for the book.
+
+### Improved
+- Pages with lots of layers and effects stutter far less when you move, zoom and scroll.
+- Page thumbnails redraw a few at a time when the app is free, the ones you can see first.
+- The recovery copy saved every 20 seconds keeps each photo once, so it's much quicker on big books.
+- Photos shown small on screen use a smaller copy, which saves memory.
+
+### Fixed
+- No layers go missing when two photos or groups share the same picture and effects.
+
 ## 0.1.25 · 27 Nov 2026
 Fixes drop shadows landing in the wrong place on exports.
 
