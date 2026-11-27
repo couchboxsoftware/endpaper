@@ -94,18 +94,11 @@ const PhotoEdit = (() => {
     if (fx.shadow) {
       const sh = fx.shadow, ang = (sh.angle * Math.PI) / 180;
       const rgb = Color.rgb(Model.resolveColor(doc, sh.colour) || { c: 0, m: 0, y: 0, k: 100 });
-      ctx.save();
-      const far = (W + H) * 4; // draw the shape far away, so only its shadow lands here
-      ctx.shadowColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${sh.opacity / 100})`;
-      ctx.shadowBlur = sh.softness * k;
-      ctx.shadowOffsetX = Math.cos(ang) * sh.distance * k + far;
-      ctx.shadowOffsetY = Math.sin(ang) * sh.distance * k;
-      if (PhotoFX.hasAlpha(it.effects)) ctx.drawImage(c, -far, 0, W, H);
-      else {
-        ctx.fillStyle = '#000';
-        ctx.fillRect(-far, 0, W, H);
-      }
-      ctx.restore();
+      // Made on its own canvas and placed like anything else, so it turns and scales with the
+      // frame. (The canvas's own shadows measure their offset straight across the screen, so a
+      // turned frame's shadow would land somewhere else entirely.)
+      const s = shadowLayer(PhotoFX.hasAlpha(it.effects) ? c : null, c.width, c.height, sh.softness * k, rgb, sh.opacity / 100);
+      ctx.drawImage(s.canvas, Math.cos(ang) * sh.distance * k - s.pad, Math.sin(ang) * sh.distance * k - s.pad);
     }
     ctx.save();
     if (fx.blend) ctx.globalCompositeOperation = BLEND[fx.blend] || 'source-over';
@@ -116,6 +109,31 @@ const PhotoEdit = (() => {
       const ol = outlineLayer(c, fx.outline, c.width / it.w, Color.rgb(Model.resolveColor(doc, fx.outline.colour) || { c: 0, m: 0, y: 0, k: 100 }));
       ctx.drawImage(ol.canvas, -ol.pad, -ol.pad, ol.canvas.width, ol.canvas.height);
     }
+  }
+  // A drop shadow on its own canvas: src's shape (or a plain w × h box with no src) in the
+  // shadow's colour, softened by soft pixels (like a canvas shadowBlur of that size), at
+  // opacity a. The canvas is pad pixels bigger than the shape on every side, for the softening:
+  // draw it pad pixels up and left of where the shape's top-left goes.
+  function shadowLayer(src, w, h, soft, rgb, a) {
+    const pad = Math.ceil(Math.max(0, soft) * 1.5) + 2;
+    const shape = document.createElement('canvas');
+    shape.width = Math.max(1, Math.ceil(w));
+    shape.height = Math.max(1, Math.ceil(h));
+    const sg = shape.getContext('2d');
+    if (src) {
+      sg.drawImage(src, 0, 0, shape.width, shape.height);
+      sg.globalCompositeOperation = 'source-in';
+    }
+    sg.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+    sg.fillRect(0, 0, shape.width, shape.height);
+    const c = document.createElement('canvas');
+    c.width = shape.width + 2 * pad;
+    c.height = shape.height + 2 * pad;
+    const g = c.getContext('2d');
+    if (soft > 0.3) g.filter = `blur(${(soft / 2).toFixed(2)}px)`;
+    g.globalAlpha = Math.max(0, Math.min(1, a));
+    g.drawImage(shape, pad, pad);
+    return { canvas: c, pad };
   }
   // Just the outline round a shape: src's see-through-ness is the shape, ppmm its pixels per mm,
   // rgb the line's colour. Returns a canvas pad pixels bigger than src on every side (the line
@@ -1167,7 +1185,7 @@ const PhotoEdit = (() => {
   }
 
   return {
-    view, dims, drawFrame, frameCss, BLEND, PDF_BLEND, fadeCropped, shadowMask, shapeOf, fadeEdges, outlineLayer, colourOf, seedOf, maskResolver, ONCE, labelOf,
+    view, dims, drawFrame, frameCss, BLEND, PDF_BLEND, fadeCropped, shadowMask, shapeOf, fadeEdges, outlineLayer, shadowLayer, colourOf, seedOf, maskResolver, ONCE, labelOf,
     open, canEdit, toggle, propsHtml, multiHtml, copyEffects, pasteEffects, hasClip, hasEffects, photosIn,
   };
 })();

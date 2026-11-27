@@ -19,6 +19,13 @@
   "(Settings, Colour)"; no tests, code or file names.
 -->
 
+## 0.1.25 · 27 Nov 2026
+Fixes drop shadows landing in the wrong place on exports.
+
+### Fixed
+- A turned photo's drop shadow stays just under it in PNG and JPG exports, page thumbnails, Preview book and the Edit photo preview, instead of landing somewhere else on the page.
+- Shadows on groups, text and shapes are drawn the same reliable way.
+
 ## 0.1.24 · 27 Nov 2026
 Add your book's ISBN barcode to the back cover in one click.
 

@@ -182,13 +182,8 @@ const ItemFX = (() => {
       // One shadow, from the whole shape.
       const sh = fx.shadow, ang = (sh.angle * Math.PI) / 180, rgb = rgbOf(sh.colour);
       under = canvas(W, H);
-      const ug = under.getContext('2d');
-      const far = (W + H) * 4;
-      ug.shadowColor = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${sh.opacity / 100})`;
-      ug.shadowBlur = sh.softness * s;
-      ug.shadowOffsetX = Math.cos(ang) * sh.distance * s + far;
-      ug.shadowOffsetY = Math.sin(ang) * sh.distance * s;
-      ug.drawImage(content, -far, 0);
+      const sl = PhotoEdit.shadowLayer(content, W, H, sh.softness * s, rgb, sh.opacity / 100);
+      under.getContext('2d').drawImage(sl.canvas, Math.cos(ang) * sh.distance * s - sl.pad, Math.sin(ang) * sh.distance * s - sl.pad);
     }
     if (fx.outline) {
       // The line round the outside of the whole shape (overlaps inside don't count).
